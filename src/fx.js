@@ -56,11 +56,11 @@ export class Fx {
     this.scene.tweens.add({ targets: sprite, scaleX: 1, scaleY: 1, duration: 220, ease: 'Quad.easeOut' });
   }
 
-  afterimage(sprite) {
+  afterimage(sprite, color = 0x5ce1ff) {
     const ghost = this.scene.add.image(sprite.x, sprite.y, sprite.texture.key)
       .setRotation(sprite.rotation)
       .setScale(sprite.scaleX, sprite.scaleY)
-      .setTint(0x5ce1ff)
+      .setTint(color)
       .setAlpha(0.5)
       .setDepth(sprite.depth - 1);
     this.scene.tweens.add({ targets: ghost, alpha: 0, duration: 180, onComplete: () => ghost.destroy() });
@@ -82,12 +82,12 @@ export class Fx {
   }
 
   // A crescent that sweeps across the swing arc (direction from swing.sweep), follows `owner`, then fades.
-  slash(owner, angle, { range, arcDeg, sweep, finisher }) {
+  slash(owner, angle, { range, arcDeg, sweep, finisher, color }) {
     const half = Phaser.Math.DegToRad(arcDeg) / 2;
     const from = angle - half * sweep;
     const span = half * 2 * sweep;
     const inner = range * (finisher ? 0.35 : 0.5);
-    const color = finisher ? 0xbff3ff : 0xffffff;
+    color ??= finisher ? 0xbff3ff : 0xffffff;
     const g = this.scene.add.graphics().setDepth(15);
     const state = { t: 0 };
 

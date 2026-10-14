@@ -2,6 +2,8 @@ import Phaser from 'phaser';
 import { TUNING } from '../tuning.js';
 
 const S = TUNING.spawn;
+// ?enemy=<type> in the URL spawns only that type, for testing.
+const FORCED_TYPE = new URLSearchParams(location.search).get('enemy');
 
 // Spawns enemies just outside the camera view, faster as time goes on.
 export class Spawner {
@@ -33,7 +35,23 @@ export class Spawner {
   trySpawn() {
     if (this.scene.enemies.countActive() >= S.maxAlive) return;
     const p = this.pickPoint();
-    this.spawn(p.x, p.y);
+    this.spawn(p.x, p.y, this.pickType());
+  }
+
+  pickType() {
+    if (FORCED_TYPE && TUNING.enemies[FORCED_TYPE]) return FORCED_TYPE;
+    const elapsed = (this.scene.time.now - this.startedAt) / 1000;
+    const stage = S.stages.findLast((s) => elapsed >= s.at);
+    const alive = {};
+    for (const e of this.scene.enemies.getChildren()) alive[e.type] = (alive[e.type] ?? 0) + 1;
+    const options = Object.entries(stage.weights).filter(([type]) => (alive[type] ?? 0) < (S.maxAliveByType[type] ?? Infinity));
+    const total = options.reduce((sum, [, w]) => sum + w, 0);
+    let roll = Math.random() * total;
+    for (const [type, w] of options) {
+      roll -= w;
+      if (roll <= 0) return type;
+    }
+    return 'grunt';
   }
 
   // Random point on the perimeter of the camera view grown by a margin, clamped into the world.
@@ -48,7 +66,7 @@ export class Spawner {
       case 2: p.x = rect.left; break;
       default: p.x = rect.right;
     }
-    const r = TUNING.enemy.radius;
+    const r = Math.max(...Object.values(TUNING.enemies).map((e) => e.radius));
     p.x = Phaser.Math.Clamp(p.x, r, TUNING.world.width - r);
     p.y = Phaser.Math.Clamp(p.y, r, TUNING.world.height - r);
     return p;

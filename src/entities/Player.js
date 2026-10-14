@@ -87,13 +87,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.dashInvulnUntil = now + D.durationMs + D.invulnGraceMs;
   }
 
-  hurt(damage, dir, now) {
+  hurt(damage, dir, now, knockback = T.hurtKnockback) {
     this.stepLeft = 0;
     this.dashLeft = 0;
     this.hp -= damage;
     this.invulnUntil = now + T.invulnMs;
     this.stunUntil = now + T.hurtStunMs;
-    this.body.velocity.copy(dir).scale(T.hurtKnockback);
+    this.body.velocity.copy(dir).scale(knockback);
   }
 
   isInvulnerable(now) {

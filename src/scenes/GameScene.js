@@ -2,9 +2,10 @@ import Phaser from 'phaser';
 import { TUNING } from '../tuning.js';
 import { COLORS, createTextures } from '../textures.js';
 import { Player } from '../entities/Player.js';
-import { Enemy } from '../entities/Enemy.js';
+import { ENEMY_TYPES } from '../entities/enemies/index.js';
 import { Spawner } from '../systems/Spawner.js';
 import { Fx } from '../fx.js';
+import { sfx } from '../audio/sfx.js';
 
 const M = TUNING.melee;
 const D = TUNING.dash;
@@ -29,6 +30,8 @@ export class GameScene extends Phaser.Scene {
     this.physics.add.overlap(this.player, this.enemies, (_p, enemy) => this.onPlayerTouched(enemy));
     this.bolts = this.physics.add.group();
     this.physics.add.overlap(this.bolts, this.enemies, (bolt, enemy) => this.onBoltHit(bolt, enemy));
+    this.enemyBullets = this.physics.add.group();
+    this.physics.add.overlap(this.player, this.enemyBullets, (_p, bullet) => this.onEnemyBulletHit(bullet));
 
     const cam = this.cameras.main;
     cam.setBounds(0, 0, W, H);
@@ -36,7 +39,10 @@ export class GameScene extends Phaser.Scene {
     this.lookahead = new Phaser.Math.Vector2();
 
     this.fx = new Fx(this);
-    this.spawner = new Spawner(this, (x, y) => this.spawnEnemy(x, y));
+    sfx.init(this.sound.context);
+    sfx.listener = this.player;
+    this.input.keyboard.on('keydown-M', () => sfx.toggleMute());
+    this.spawner = new Spawner(this, (x, y, type) => this.spawnEnemy(x, y, type));
 
     this.cursors = this.input.keyboard.createCursorKeys();
     this.wasd = this.input.keyboard.addKeys('W,A,S,D');
@@ -85,11 +91,14 @@ export class GameScene extends Phaser.Scene {
     this.player.move(moveDir, dt, now);
     this.tryAttack(now);
     this.tryShoot(now, pointer);
-    this.updateBolts();
+    this.updateProjectiles(this.bolts);
+    this.updateProjectiles(this.enemyBullets);
     this.updateDashFx(now);
 
     for (const enemy of this.enemies.getChildren()) {
-      if (!enemy.dying) enemy.chase(this.player, dt, now);
+      if (enemy.dying) continue;
+      enemy.tick(this.player, dt, now);
+      enemy.syncVisuals();
     }
 
     this.player.syncVisuals(now);
@@ -115,6 +124,7 @@ export class GameScene extends Phaser.Scene {
     const angle = moveDir.lengthSq() > 0 ? moveDir.angle() : p.aimAngle;
     p.dash(angle, now);
     this.fx.dashStart(p, angle);
+    sfx.dash();
     this.dashWasReady = false;
   }
 
@@ -125,7 +135,10 @@ export class GameScene extends Phaser.Scene {
       this.nextGhostAt = now + D.ghostIntervalMs;
     }
     const ready = !p.isDashing && now >= p.nextDashAt;
-    if (ready && !this.dashWasReady) this.fx.readyRing(p, TUNING.player.radius);
+    if (ready && !this.dashWasReady) {
+      this.fx.readyRing(p, TUNING.player.radius);
+      sfx.dashReady();
+    }
     this.dashWasReady = ready;
   }
 
@@ -144,17 +157,17 @@ export class GameScene extends Phaser.Scene {
     p.comboIndex = isFinisher ? 0 : p.comboIndex + 1;
 
     // Aim assist: step toward the nearest enemy roughly in front, and bend the swing toward it.
-    const er = TUNING.enemy.radius;
     const target = this.findSwingTarget(swing);
     let angle = p.aimAngle;
     let stepDist = swing.step;
     if (target) {
       angle = target.angle;
-      const gap = TUNING.player.radius + er + M.stepGap;
+      const gap = TUNING.player.radius + target.enemy.radius + M.stepGap;
       stepDist = Phaser.Math.Clamp(target.dist - gap, 0, swing.maxStep);
     }
     p.step(angle, stepDist, M.stepMs);
     this.fx.slash(p, angle, swing);
+    sfx.swing(swing.finisher);
 
     // Resolve hits from where the step ends, so the swing lands where it's drawn.
     const ox = p.x + Math.cos(angle) * stepDist;
@@ -163,20 +176,31 @@ export class GameScene extends Phaser.Scene {
     let hits = 0;
     let kills = 0;
 
+    const inSwing = (x, y, radius) => {
+      const dist = Phaser.Math.Distance.Between(ox, oy, x, y);
+      if (dist > swing.range + radius) return false;
+      if (dist < TUNING.player.radius + radius + 6) return true;
+      return Math.abs(Phaser.Math.Angle.Wrap(Math.atan2(y - oy, x - ox) - angle)) <= halfArc;
+    };
+
+    // Swings delete enemy bullets.
+    for (const bullet of [...this.enemyBullets.getChildren()]) {
+      if (!inSwing(bullet.x, bullet.y, 7)) continue;
+      this.fx.hitSparks(bullet.x, bullet.y);
+      sfx.deflect(bullet.x, bullet.y);
+      bullet.destroy();
+    }
+
     for (const enemy of [...this.enemies.getChildren()]) {
-      if (enemy.dying) continue;
-      const dx = enemy.x - ox;
-      const dy = enemy.y - oy;
-      const dist = Math.hypot(dx, dy);
-      if (dist > swing.range + er) continue;
-      const touching = dist < TUNING.player.radius + er + 6;
-      const offAngle = Math.abs(Phaser.Math.Angle.Wrap(Math.atan2(dy, dx) - angle));
-      if (!touching && offAngle > halfArc) continue;
+      if (enemy.dying || !inSwing(enemy.x, enemy.y, enemy.radius)) continue;
 
       hits++;
-      const dir = dist > 0.01 ? new Phaser.Math.Vector2(dx / dist, dy / dist) : new Phaser.Math.Vector2().setToPolar(angle);
-      this.fx.hitSparks(enemy.x - dir.x * er, enemy.y - dir.y * er);
-      if (enemy.takeHit(swing.damage, dir, swing.knockback, now)) {
+      const dir = new Phaser.Math.Vector2(enemy.x - ox, enemy.y - oy);
+      if (dir.lengthSq() < 0.01) dir.setToPolar(angle);
+      dir.normalize();
+      this.fx.hitSparks(enemy.x - dir.x * enemy.radius, enemy.y - dir.y * enemy.radius);
+      const hit = { damage: swing.damage, dir, knockback: swing.knockback, heavy: swing.finisher };
+      if (enemy.takeHit(hit, now)) {
         kills++;
         this.killEnemy(enemy);
       } else {
@@ -185,6 +209,7 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
+    if (hits > kills) sfx.hit(swing.finisher);
     if (hits > 0) {
       this.hitstop(swing.hitstopMs + (kills > 0 ? M.killHitstopBonusMs : 0));
       this.fx.shake(swing.shake);
@@ -211,22 +236,44 @@ export class GameScene extends Phaser.Scene {
     bolt.setRotation(angle).setDepth(12).setBlendMode(Phaser.BlendModes.ADD);
     bolt.startX = x;
     bolt.startY = y;
+    bolt.maxRange = R.range;
 
     p.body.velocity.add(new Phaser.Math.Vector2().setToPolar(angle, -R.recoil));
+    sfx.shoot();
     this.fx.hitSparks(x, y);
     this.fx.shake(R.shake);
   }
 
-  // Bolts fizzle out at max range or the world edge.
-  updateBolts() {
+  // Projectiles fizzle out at their max range or the world edge.
+  updateProjectiles(group) {
     const { width: W, height: H } = TUNING.world;
-    for (const bolt of [...this.bolts.getChildren()]) {
-      const travelled = Phaser.Math.Distance.Between(bolt.startX, bolt.startY, bolt.x, bolt.y);
-      const outside = bolt.x < 0 || bolt.y < 0 || bolt.x > W || bolt.y > H;
-      if (travelled < R.range && !outside) continue;
-      this.fx.hitSparks(bolt.x, bolt.y);
-      bolt.destroy();
+    for (const shot of [...group.getChildren()]) {
+      const travelled = Phaser.Math.Distance.Between(shot.startX, shot.startY, shot.x, shot.y);
+      const outside = shot.x < 0 || shot.y < 0 || shot.x > W || shot.y > H;
+      if (travelled < shot.maxRange && !outside) continue;
+      this.fx.hitSparks(shot.x, shot.y);
+      shot.destroy();
     }
+  }
+
+  spawnEnemyBullet(x, y, angle, cfg) {
+    const bullet = this.enemyBullets.create(x, y, 'ebullet');
+    bullet.body.setCircle(5, 2, 2);
+    bullet.setVelocity(Math.cos(angle) * cfg.bulletSpeed, Math.sin(angle) * cfg.bulletSpeed);
+    bullet.setDepth(12);
+    bullet.startX = x;
+    bullet.startY = y;
+    bullet.maxRange = cfg.bulletRange;
+    bullet.damage = cfg.bulletDamage;
+    bullet.knockback = cfg.bulletKnockback;
+  }
+
+  // Bullets pass through you while you're invulnerable, so dashing through them works.
+  onEnemyBulletHit(bullet) {
+    if (!bullet.active || this.player.isInvulnerable(this.time.now)) return;
+    const dir = bullet.body.velocity.clone().normalize();
+    bullet.destroy();
+    this.damagePlayer(bullet.damage, dir, bullet.knockback);
   }
 
   onBoltHit(bolt, enemy) {
@@ -234,11 +281,12 @@ export class GameScene extends Phaser.Scene {
     const now = this.time.now;
     const dir = bolt.body.velocity.clone().normalize();
     bolt.destroy();
-    this.fx.hitSparks(enemy.x - dir.x * TUNING.enemy.radius, enemy.y - dir.y * TUNING.enemy.radius);
-    if (enemy.takeHit(R.damage, dir, R.knockback, now, R.stunMs)) {
+    this.fx.hitSparks(enemy.x - dir.x * enemy.radius, enemy.y - dir.y * enemy.radius);
+    if (enemy.takeHit({ damage: R.damage, dir, knockback: R.knockback, stunMs: R.stunMs }, now)) {
       this.killEnemy(enemy);
       this.hitstop(R.killHitstopMs);
     } else {
+      sfx.boltHit(enemy.x, enemy.y);
       this.fx.flash(enemy, 50);
       this.fx.squash(enemy, 0.2, 70);
     }
@@ -247,16 +295,16 @@ export class GameScene extends Phaser.Scene {
   // Nearest live enemy within reach (range + assist distance) and within assistDeg of the mouse.
   findSwingTarget(swing) {
     const p = this.player;
-    const reach = swing.range + TUNING.enemy.radius + M.assistRange;
+    const reach = swing.range + M.assistRange;
     const cone = Phaser.Math.DegToRad(M.assistDeg);
     let best = null;
     for (const enemy of this.enemies.getChildren()) {
       if (enemy.dying) continue;
       const dist = Phaser.Math.Distance.Between(p.x, p.y, enemy.x, enemy.y);
-      if (dist > reach || (best && dist >= best.dist)) continue;
+      if (dist > reach + enemy.radius || (best && dist >= best.dist)) continue;
       const angle = Math.atan2(enemy.y - p.y, enemy.x - p.x);
       if (Math.abs(Phaser.Math.Angle.Wrap(angle - p.aimAngle)) > cone) continue;
-      best = { dist, angle };
+      best = { enemy, dist, angle };
     }
     return best;
   }
@@ -264,29 +312,43 @@ export class GameScene extends Phaser.Scene {
   killEnemy(enemy) {
     this.kills++;
     this.fx.deathBurst(enemy.x, enemy.y);
+    sfx.kill(enemy.x, enemy.y);
     enemy.die();
   }
 
-  spawnEnemy(x, y) {
-    const enemy = new Enemy(this, x, y);
+  spawnEnemy(x, y, type) {
+    const enemy = new ENEMY_TYPES[type](this, x, y);
     this.enemies.add(enemy);
     enemy.setupBody();
   }
 
   onPlayerTouched(enemy) {
-    const now = this.time.now;
-    if (this.isOver || this.player.isInvulnerable(now) || !enemy.canHurt(now)) return;
-
+    const contact = enemy.contact(this.time.now);
+    if (!contact) return;
     const dir = new Phaser.Math.Vector2(this.player.x - enemy.x, this.player.y - enemy.y).normalize();
-    this.player.hurt(TUNING.enemy.contactDamage, dir, now);
-    enemy.knock(dir.clone().negate(), TUNING.player.hurtKnockback * 0.6, now);
+    if (this.damagePlayer(contact.damage, dir, contact.knockback)) {
+      enemy.knock(dir.clone().negate(), TUNING.player.hurtKnockback * 0.6, this.time.now);
+    }
+  }
+
+  // Returns false if the player couldn't be hurt right now.
+  damagePlayer(damage, dir, knockback) {
+    const now = this.time.now;
+    if (this.isOver || this.player.isInvulnerable(now)) return false;
+    this.player.hurt(damage, dir, now, knockback);
 
     this.hitstop(TUNING.hurtFx.hitstopMs);
     this.fx.shake(TUNING.hurtFx.shake);
     this.cameras.main.flash(120, 120, 20, 40);
 
-    if (this.player.hp <= 0) this.gameOver();
-    else this.fx.flash(this.player, 90);
+    if (this.player.hp <= 0) {
+      sfx.death();
+      this.gameOver();
+    } else {
+      sfx.hurt();
+      this.fx.flash(this.player, 90);
+    }
+    return true;
   }
 
   hitstop(ms) {
@@ -309,7 +371,8 @@ export class GameScene extends Phaser.Scene {
     const hp = Math.max(this.player.hp, 0);
     const secs = Math.floor((now - this.startedAt) / 1000);
     const time = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
-    this.hud.setText(`HP ${'●'.repeat(hp)}${'○'.repeat(max - hp)}   Kills ${this.kills}   ${time}`);
+    const muted = sfx.muted ? '   [M] muted' : '';
+    this.hud.setText(`HP ${'●'.repeat(hp)}${'○'.repeat(max - hp)}   Kills ${this.kills}   ${time}${muted}`);
   }
 
   gameOver() {
