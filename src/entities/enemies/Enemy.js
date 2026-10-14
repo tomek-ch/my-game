@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { TUNING } from '../../tuning.js';
 import { ENEMY_PAD } from '../../textures.js';
+import { ySortDepth } from '../depth.js';
 
 // Base enemy: walks at the player. Subclasses override think() and use enter()/stateT for simple
 // state machines. stateT counts seconds of unfrozen time, so hitstop doesn't eat telegraphs.
@@ -11,7 +12,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.cfg = TUNING.enemies[type];
     this.radius = this.cfg.radius;
     scene.add.existing(this);
-    this.setDepth(5);
+    this.setDepth(ySortDepth(y));
 
     this.hp = this.cfg.hp;
     this.stunUntil = 0;
@@ -19,6 +20,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.dying = false;
     this.mode = 'chase';
     this.stateT = 0;
+    this.facing = 0; // radians; logic reads this, never the sprite's rotation
     this.telegraphGfx = null;
     this.windupSound = null; // handle of a telegraph sound to cut off if interrupted
     this.on('destroy', () => this.telegraphGfx?.destroy());
@@ -87,7 +89,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
 
   faceVelocity() {
     const v = this.body.velocity;
-    if (v.lengthSq() > 1) this.setRotation(Math.atan2(v.y, v.x));
+    if (v.lengthSq() > 1) this.facing = Math.atan2(v.y, v.x);
   }
 
   angleTo(target) {
@@ -130,7 +132,11 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.windupSound = null;
   }
 
-  syncVisuals() {}
+  // The placeholder shapes show facing by rotating; sprite-sheet art will flip instead.
+  syncVisuals() {
+    this.setRotation(this.facing);
+    this.setDepth(ySortDepth(this.y));
+  }
 
   die() {
     this.dying = true;

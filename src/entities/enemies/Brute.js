@@ -30,7 +30,7 @@ export class Brute extends Enemy {
       }
     } else if (this.mode === 'windup') {
       this.brake(dt);
-      this.setRotation(this.aim);
+      this.facing = this.aim;
       const progress = this.stateT * 1000 / a.windupMs;
       this.drawArea(Math.min(progress, 1));
       if (progress >= 1) this.swing(player);
@@ -105,6 +105,7 @@ export class Brute extends Enemy {
   }
 
   syncVisuals() {
+    super.syncVisuals();
     const g = this.bar.clear();
     if (this.hp >= this.cfg.hp || this.dying) return;
     const w = 40;

@@ -16,7 +16,7 @@ export class Shooter extends Enemy {
     const dx = player.x - this.x;
     const dy = player.y - this.y;
     const dist = Math.hypot(dx, dy) || 1;
-    this.setRotation(Math.atan2(dy, dx));
+    this.facing = Math.atan2(dy, dx);
 
     if (this.mode === 'chase') {
       this.strafeFlipLeft -= dt;
@@ -53,18 +53,18 @@ export class Shooter extends Enemy {
     const g = this.telegraph();
     const d = this.radius + 8;
     g.fillStyle(this.cfg.color, 0.4 + progress * 0.5);
-    g.fillCircle(this.x + Math.cos(this.rotation) * d, this.y + Math.sin(this.rotation) * d, 2 + progress * 5);
+    g.fillCircle(this.x + Math.cos(this.facing) * d, this.y + Math.sin(this.facing) * d, 2 + progress * 5);
   }
 
   fire() {
     this.windupSound = null;
     this.clearTelegraph();
     const d = this.radius + 8;
-    const x = this.x + Math.cos(this.rotation) * d;
-    const y = this.y + Math.sin(this.rotation) * d;
-    this.scene.spawnEnemyBullet(x, y, this.rotation, this.cfg);
+    const x = this.x + Math.cos(this.facing) * d;
+    const y = this.y + Math.sin(this.facing) * d;
+    this.scene.spawnEnemyBullet(x, y, this.facing, this.cfg);
     sfx.shooterFire(x, y);
-    this.body.velocity.setToPolar(this.rotation, -60);
+    this.body.velocity.setToPolar(this.facing, -60);
     this.fireLeft = this.cfg.fireIntervalMs / 1000 * Phaser.Math.FloatBetween(0.8, 1.2);
     this.enter('chase');
   }

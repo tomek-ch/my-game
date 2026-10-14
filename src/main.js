@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { BootScene } from './scenes/BootScene.js';
 import { GameScene } from './scenes/GameScene.js';
 
 // Open with ?debug to see physics bodies.
@@ -10,7 +11,9 @@ new Phaser.Game({
   width: 1280,
   height: 720,
   backgroundColor: '#101018',
+  pixelArt: true,
+  roundPixels: true,
   scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
   physics: { default: 'arcade', arcade: { debug } },
-  scene: [GameScene],
+  scene: [BootScene, GameScene],
 });

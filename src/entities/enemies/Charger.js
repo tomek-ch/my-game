@@ -27,7 +27,7 @@ export class Charger extends Enemy {
       this.brake(dt);
       const t = this.stateT * 1000;
       if (t < c.telegraphMs - c.aimLockMs) this.aim = this.angleTo(player);
-      this.setRotation(this.aim);
+      this.facing = this.aim;
       this.drawPath(t / c.telegraphMs);
       if (t >= c.telegraphMs) this.startCharge();
     } else if (this.mode === 'charge') {

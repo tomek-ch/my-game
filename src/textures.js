@@ -14,7 +14,6 @@ export const ENEMY_PAD = 6;
 
 // Generates every texture from shapes, so there are no asset files yet.
 export function createTextures(scene) {
-  if (scene.textures.exists('player')) return;
   const g = scene.make.graphics({}, false);
 
   const pr = TUNING.player.radius;

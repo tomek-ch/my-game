@@ -49,16 +49,18 @@ export class Fx {
     });
   }
 
-  // Stretch along the dash direction and kick up dust behind.
+  // Stretch along the dash's main axis (pixel sprites don't rotate) and kick up dust behind.
   dashStart(sprite, angle) {
     this.sparks.explode(6, sprite.x - Math.cos(angle) * 10, sprite.y - Math.sin(angle) * 10);
-    sprite.setRotation(angle).setScale(1.4, 0.7);
+    const horizontal = Math.abs(Math.cos(angle)) >= Math.abs(Math.sin(angle));
+    sprite.setScale(horizontal ? 1.4 : 0.7, horizontal ? 0.7 : 1.4);
     this.scene.tweens.add({ targets: sprite, scaleX: 1, scaleY: 1, duration: 220, ease: 'Quad.easeOut' });
   }
 
   afterimage(sprite, color = 0x5ce1ff) {
     const ghost = this.scene.add.image(sprite.x, sprite.y, sprite.texture.key)
       .setRotation(sprite.rotation)
+      .setFlipX(sprite.flipX)
       .setScale(sprite.scaleX, sprite.scaleY)
       .setTint(color)
       .setAlpha(0.5)

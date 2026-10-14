@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { TUNING } from '../tuning.js';
-import { COLORS, createTextures } from '../textures.js';
+import { COLORS } from '../textures.js';
 import { Player } from '../entities/Player.js';
 import { ENEMY_TYPES } from '../entities/enemies/index.js';
 import { Spawner } from '../systems/Spawner.js';
@@ -17,7 +17,6 @@ export class GameScene extends Phaser.Scene {
   }
 
   create() {
-    createTextures(this);
     const { width: W, height: H } = TUNING.world;
 
     this.physics.world.setBounds(0, 0, W, H);

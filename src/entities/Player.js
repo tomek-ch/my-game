@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { TUNING } from '../tuning.js';
+import { ySortDepth } from './depth.js';
 
 const T = TUNING.player;
 const D = TUNING.dash;
@@ -11,7 +12,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     scene.physics.add.existing(this);
     this.body.setCircle(T.radius);
     this.setCollideWorldBounds(true);
-    this.setDepth(10);
+    this.setDepth(ySortDepth(y));
 
     this.hp = T.maxHp;
     this.aimAngle = 0;
@@ -106,5 +107,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.aimMarker.setRotation(this.aimAngle);
     const blink = now < this.invulnUntil && Math.floor(now / 60) % 2 === 0;
     this.setAlpha(blink ? 0.35 : 1);
+    this.setFlipX(Math.cos(this.aimAngle) < 0);
+    this.setDepth(ySortDepth(this.y));
   }
 }
