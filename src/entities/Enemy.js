@@ -36,9 +36,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.setRotation(Math.atan2(vel.y, vel.x));
   }
 
-  knock(dir, force, now) {
+  knock(dir, force, now, stunMs = E.stunMs) {
     this.body.velocity.copy(dir).scale(force);
-    this.stunUntil = now + E.stunMs;
+    this.stunUntil = Math.max(this.stunUntil, now + stunMs);
   }
 
   // Enemies reeling from a hit can't deal contact damage.
@@ -47,9 +47,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   }
 
   // Returns true when this hit kills it.
-  takeHit(damage, dir, force, now) {
+  takeHit(damage, dir, force, now, stunMs) {
     this.hp -= damage;
-    this.knock(dir, force, now);
+    this.knock(dir, force, now, stunMs);
     return this.hp <= 0;
   }
 

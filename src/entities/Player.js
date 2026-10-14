@@ -18,6 +18,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.invulnUntil = 0;
     this.stunUntil = 0;
     this.nextAttackAt = 0;
+    this.nextShotAt = 0;
     this.comboIndex = 0;
     this.comboExpiresAt = 0;
     this.stepLeft = 0; // seconds of attack step remaining, only counts down while unfrozen

@@ -8,6 +8,7 @@ import { Fx } from '../fx.js';
 
 const M = TUNING.melee;
 const D = TUNING.dash;
+const R = TUNING.ranged;
 
 export class GameScene extends Phaser.Scene {
   constructor() {
@@ -26,6 +27,8 @@ export class GameScene extends Phaser.Scene {
     this.enemies = this.physics.add.group();
     this.physics.add.collider(this.enemies, this.enemies);
     this.physics.add.overlap(this.player, this.enemies, (_p, enemy) => this.onPlayerTouched(enemy));
+    this.bolts = this.physics.add.group();
+    this.physics.add.overlap(this.bolts, this.enemies, (bolt, enemy) => this.onBoltHit(bolt, enemy));
 
     const cam = this.cameras.main;
     cam.setBounds(0, 0, W, H);
@@ -39,9 +42,11 @@ export class GameScene extends Phaser.Scene {
     this.wasd = this.input.keyboard.addKeys('W,A,S,D');
     this.input.mouse.disableContextMenu();
     this.attackQueuedAt = -Infinity;
-    this.input.on('pointerdown', () => {
+    this.shootQueuedAt = -Infinity;
+    this.input.on('pointerdown', (pointer) => {
       if (this.isOver) this.tryRestart();
-      else this.attackQueuedAt = this.time.now;
+      else if (pointer.button === 2) this.shootQueuedAt = this.time.now;
+      else if (pointer.button === 0) this.attackQueuedAt = this.time.now;
     });
     this.input.keyboard.on('keydown-R', () => this.isOver && this.tryRestart());
     this.dashQueuedAt = -Infinity;
@@ -79,6 +84,8 @@ export class GameScene extends Phaser.Scene {
     this.tryDash(now, moveDir);
     this.player.move(moveDir, dt, now);
     this.tryAttack(now);
+    this.tryShoot(now, pointer);
+    this.updateBolts();
     this.updateDashFx(now);
 
     for (const enemy of this.enemies.getChildren()) {
@@ -181,6 +188,59 @@ export class GameScene extends Phaser.Scene {
     if (hits > 0) {
       this.hitstop(swing.hitstopMs + (kills > 0 ? M.killHitstopBonusMs : 0));
       this.fx.shake(swing.shake);
+    }
+  }
+
+  // Right click fires; holding it auto-fires at the cooldown rate.
+  tryShoot(now, pointer) {
+    const p = this.player;
+    if (p.isDashing || now < p.nextShotAt) return;
+    if (!pointer.rightButtonDown() && now - this.shootQueuedAt > R.bufferMs) return;
+    this.shootQueuedAt = -Infinity;
+    p.nextShotAt = now + R.cooldownMs;
+
+    const angle = p.aimAngle + Phaser.Math.DegToRad(Phaser.Math.FloatBetween(-R.spreadDeg, R.spreadDeg));
+    const muzzle = TUNING.player.radius + 8;
+    const x = p.x + Math.cos(angle) * muzzle;
+    const y = p.y + Math.sin(angle) * muzzle;
+
+    // Configure after create(): the group resets body settings when it adopts a child.
+    const bolt = this.bolts.create(x, y, 'bolt');
+    bolt.body.setSize(8, 8);
+    bolt.setVelocity(Math.cos(angle) * R.speed, Math.sin(angle) * R.speed);
+    bolt.setRotation(angle).setDepth(12).setBlendMode(Phaser.BlendModes.ADD);
+    bolt.startX = x;
+    bolt.startY = y;
+
+    p.body.velocity.add(new Phaser.Math.Vector2().setToPolar(angle, -R.recoil));
+    this.fx.hitSparks(x, y);
+    this.fx.shake(R.shake);
+  }
+
+  // Bolts fizzle out at max range or the world edge.
+  updateBolts() {
+    const { width: W, height: H } = TUNING.world;
+    for (const bolt of [...this.bolts.getChildren()]) {
+      const travelled = Phaser.Math.Distance.Between(bolt.startX, bolt.startY, bolt.x, bolt.y);
+      const outside = bolt.x < 0 || bolt.y < 0 || bolt.x > W || bolt.y > H;
+      if (travelled < R.range && !outside) continue;
+      this.fx.hitSparks(bolt.x, bolt.y);
+      bolt.destroy();
+    }
+  }
+
+  onBoltHit(bolt, enemy) {
+    if (!bolt.active || enemy.dying) return;
+    const now = this.time.now;
+    const dir = bolt.body.velocity.clone().normalize();
+    bolt.destroy();
+    this.fx.hitSparks(enemy.x - dir.x * TUNING.enemy.radius, enemy.y - dir.y * TUNING.enemy.radius);
+    if (enemy.takeHit(R.damage, dir, R.knockback, now, R.stunMs)) {
+      this.killEnemy(enemy);
+      this.hitstop(R.killHitstopMs);
+    } else {
+      this.fx.flash(enemy, 50);
+      this.fx.squash(enemy, 0.2, 70);
     }
   }
 

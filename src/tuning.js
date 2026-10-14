@@ -32,6 +32,20 @@ export const TUNING = {
     ghostIntervalMs: 18,  // afterimage spacing
   },
 
+  ranged: {
+    cooldownMs: 240,      // also the auto-fire rate while right button is held
+    bufferMs: 120,
+    speed: 760,
+    range: 520,           // bolt fizzles after travelling this far
+    spreadDeg: 3,         // random +/- deviation per shot
+    damage: 1,
+    knockback: 140,
+    stunMs: 110,          // shorter than melee so bolts can't stunlock a crowd
+    recoil: 70,           // pushes the player backward a little per shot
+    killHitstopMs: 30,
+    shake: { duration: 40, intensity: 0.0015 },
+  },
+
   melee: {
     bufferMs: 180,        // a click this early before the next swing is allowed still counts
     comboWindowMs: 450,   // after a swing's recovery, how long you have to continue the chain
