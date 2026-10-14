@@ -41,8 +41,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.stunUntil = now + E.stunMs;
   }
 
+  // Enemies reeling from a hit can't deal contact damage.
   canHurt(now) {
-    return !this.dying && now >= this.spawnGraceUntil;
+    return !this.dying && now >= this.spawnGraceUntil && now >= this.stunUntil;
   }
 
   // Returns true when this hit kills it.

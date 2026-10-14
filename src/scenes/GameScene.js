@@ -7,6 +7,7 @@ import { Spawner } from '../systems/Spawner.js';
 import { Fx } from '../fx.js';
 
 const M = TUNING.melee;
+const D = TUNING.dash;
 
 export class GameScene extends Phaser.Scene {
   constructor() {
@@ -43,6 +44,14 @@ export class GameScene extends Phaser.Scene {
       else this.attackQueuedAt = this.time.now;
     });
     this.input.keyboard.on('keydown-R', () => this.isOver && this.tryRestart());
+    this.dashQueuedAt = -Infinity;
+    const queueDash = (e) => {
+      if (!e.repeat) this.dashQueuedAt = this.time.now;
+    };
+    this.input.keyboard.on('keydown-SPACE', queueDash);
+    this.input.keyboard.on('keydown-SHIFT', queueDash);
+    this.nextGhostAt = 0;
+    this.dashWasReady = true;
 
     this.hitstopUntil = 0;
     this.kills = 0;
@@ -66,8 +75,11 @@ export class GameScene extends Phaser.Scene {
     const pointer = this.input.activePointer;
     const aim = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
     this.player.aimAt(aim.x, aim.y);
-    this.player.move(this.readMoveInput(), dt, now);
+    const moveDir = this.readMoveInput();
+    this.tryDash(now, moveDir);
+    this.player.move(moveDir, dt, now);
     this.tryAttack(now);
+    this.updateDashFx(now);
 
     for (const enemy of this.enemies.getChildren()) {
       if (!enemy.dying) enemy.chase(this.player, dt, now);
@@ -88,46 +100,105 @@ export class GameScene extends Phaser.Scene {
     return dir.normalize();
   }
 
+  // Dash where you're moving, or toward the mouse when standing still.
+  tryDash(now, moveDir) {
+    const p = this.player;
+    if (now - this.dashQueuedAt > D.bufferMs || !p.canDash(now)) return;
+    this.dashQueuedAt = -Infinity;
+    const angle = moveDir.lengthSq() > 0 ? moveDir.angle() : p.aimAngle;
+    p.dash(angle, now);
+    this.fx.dashStart(p, angle);
+    this.dashWasReady = false;
+  }
+
+  updateDashFx(now) {
+    const p = this.player;
+    if (p.isDashing && now >= this.nextGhostAt) {
+      this.fx.afterimage(p);
+      this.nextGhostAt = now + D.ghostIntervalMs;
+    }
+    const ready = !p.isDashing && now >= p.nextDashAt;
+    if (ready && !this.dashWasReady) this.fx.readyRing(p, TUNING.player.radius);
+    this.dashWasReady = ready;
+  }
+
   tryAttack(now) {
+    // Clicks during a dash stay buffered and fire as it ends.
+    if (this.player.isDashing) return;
     if (now - this.attackQueuedAt > M.bufferMs || now < this.player.nextAttackAt) return;
     this.attackQueuedAt = -Infinity;
 
     const p = this.player;
-    p.nextAttackAt = now + M.cooldownMs;
-    this.fx.slash(p, p.aimAngle, M.range, M.arcDeg);
-    p.body.velocity.add(new Phaser.Math.Vector2().setToPolar(p.aimAngle, M.lungeSpeed));
+    if (now > p.comboExpiresAt) p.comboIndex = 0;
+    const swing = M.swings[p.comboIndex];
+    const isFinisher = p.comboIndex === M.swings.length - 1;
+    p.nextAttackAt = now + swing.recoveryMs + (isFinisher ? M.comboCooldownMs : 0);
+    p.comboExpiresAt = now + swing.recoveryMs + M.comboWindowMs;
+    p.comboIndex = isFinisher ? 0 : p.comboIndex + 1;
 
+    // Aim assist: step toward the nearest enemy roughly in front, and bend the swing toward it.
     const er = TUNING.enemy.radius;
-    const halfArc = Phaser.Math.DegToRad(M.arcDeg) / 2;
+    const target = this.findSwingTarget(swing);
+    let angle = p.aimAngle;
+    let stepDist = swing.step;
+    if (target) {
+      angle = target.angle;
+      const gap = TUNING.player.radius + er + M.stepGap;
+      stepDist = Phaser.Math.Clamp(target.dist - gap, 0, swing.maxStep);
+    }
+    p.step(angle, stepDist, M.stepMs);
+    this.fx.slash(p, angle, swing);
+
+    // Resolve hits from where the step ends, so the swing lands where it's drawn.
+    const ox = p.x + Math.cos(angle) * stepDist;
+    const oy = p.y + Math.sin(angle) * stepDist;
+    const halfArc = Phaser.Math.DegToRad(swing.arcDeg) / 2;
     let hits = 0;
     let kills = 0;
 
     for (const enemy of [...this.enemies.getChildren()]) {
       if (enemy.dying) continue;
-      const dx = enemy.x - p.x;
-      const dy = enemy.y - p.y;
+      const dx = enemy.x - ox;
+      const dy = enemy.y - oy;
       const dist = Math.hypot(dx, dy);
-      if (dist > M.range + er) continue;
+      if (dist > swing.range + er) continue;
       const touching = dist < TUNING.player.radius + er + 6;
-      const offAngle = Math.abs(Phaser.Math.Angle.Wrap(Math.atan2(dy, dx) - p.aimAngle));
+      const offAngle = Math.abs(Phaser.Math.Angle.Wrap(Math.atan2(dy, dx) - angle));
       if (!touching && offAngle > halfArc) continue;
 
       hits++;
-      const dir = dist > 0.01 ? new Phaser.Math.Vector2(dx / dist, dy / dist) : new Phaser.Math.Vector2().setToPolar(p.aimAngle);
+      const dir = dist > 0.01 ? new Phaser.Math.Vector2(dx / dist, dy / dist) : new Phaser.Math.Vector2().setToPolar(angle);
       this.fx.hitSparks(enemy.x - dir.x * er, enemy.y - dir.y * er);
-      if (enemy.takeHit(M.damage, dir, M.knockback, now)) {
+      if (enemy.takeHit(swing.damage, dir, swing.knockback, now)) {
         kills++;
         this.killEnemy(enemy);
       } else {
         this.fx.flash(enemy);
-        this.fx.squash(enemy);
+        this.fx.squash(enemy, swing.finisher ? 0.45 : 0.3);
       }
     }
 
     if (hits > 0) {
-      this.hitstop(kills > 0 ? M.killHitstopMs : M.hitstopMs);
-      this.fx.shake(M.shake);
+      this.hitstop(swing.hitstopMs + (kills > 0 ? M.killHitstopBonusMs : 0));
+      this.fx.shake(swing.shake);
     }
+  }
+
+  // Nearest live enemy within reach (range + assist distance) and within assistDeg of the mouse.
+  findSwingTarget(swing) {
+    const p = this.player;
+    const reach = swing.range + TUNING.enemy.radius + M.assistRange;
+    const cone = Phaser.Math.DegToRad(M.assistDeg);
+    let best = null;
+    for (const enemy of this.enemies.getChildren()) {
+      if (enemy.dying) continue;
+      const dist = Phaser.Math.Distance.Between(p.x, p.y, enemy.x, enemy.y);
+      if (dist > reach || (best && dist >= best.dist)) continue;
+      const angle = Math.atan2(enemy.y - p.y, enemy.x - p.x);
+      if (Math.abs(Phaser.Math.Angle.Wrap(angle - p.aimAngle)) > cone) continue;
+      best = { dist, angle };
+    }
+    return best;
   }
 
   killEnemy(enemy) {

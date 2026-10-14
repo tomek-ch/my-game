@@ -22,17 +22,44 @@ export const TUNING = {
     stunFriction: 9,      // how fast knockback bleeds off (exponential, per second)
   },
 
+  dash: {
+    distance: 150,
+    durationMs: 130,
+    cooldownMs: 550,      // counted from the end of the dash
+    bufferMs: 120,
+    invulnGraceMs: 60,    // stay untouchable this long after the dash ends
+    exitSpeed: 260,       // speed you come out of the dash with (player maxSpeed = seamless run)
+    ghostIntervalMs: 18,  // afterimage spacing
+  },
+
   melee: {
-    cooldownMs: 260,
-    bufferMs: 160,        // a click this early before cooldown ends still counts
-    range: 72,
-    arcDeg: 120,
-    damage: 1,
-    knockback: 560,
-    lungeSpeed: 170,      // small forward push on swing
-    hitstopMs: 50,        // freeze when the swing connects
-    killHitstopMs: 80,
-    shake: { duration: 90, intensity: 0.004 },
+    bufferMs: 180,        // a click this early before the next swing is allowed still counts
+    comboWindowMs: 450,   // after a swing's recovery, how long you have to continue the chain
+    comboCooldownMs: 380, // extra wait after the finisher
+    assistRange: 60,      // look this far past swing range for an enemy to step toward
+    assistDeg: 35,        // swing bends toward that enemy if it's within this angle of the mouse
+    stepMs: 70,           // duration of the forward step on each swing
+    stepGap: 6,           // the step stops this far short of touching the target
+    killHitstopBonusMs: 25,
+
+    // One entry per hit of the combo. sweep: 1 / -1 is which way the slash is drawn.
+    swings: [
+      {
+        damage: 1, range: 72, arcDeg: 115, knockback: 230, recoveryMs: 190,
+        step: 12, maxStep: 50, hitstopMs: 45, sweep: 1, finisher: false,
+        shake: { duration: 70, intensity: 0.003 },
+      },
+      {
+        damage: 1, range: 72, arcDeg: 115, knockback: 230, recoveryMs: 190,
+        step: 12, maxStep: 50, hitstopMs: 45, sweep: -1, finisher: false,
+        shake: { duration: 70, intensity: 0.003 },
+      },
+      {
+        damage: 2, range: 88, arcDeg: 170, knockback: 680, recoveryMs: 240,
+        step: 20, maxStep: 70, hitstopMs: 90, sweep: 1, finisher: true,
+        shake: { duration: 140, intensity: 0.009 },
+      },
+    ],
   },
 
   enemy: {
