@@ -77,17 +77,18 @@ export const TUNING = {
   },
 
   // Shared fields: radius, hp, maxSpeed, accel, stunMs (how long a normal hit stuns; stunned enemies
-  // don't steer or deal damage), knockbackFriction, contactDamage, mass (for shoving each other), colors.
+  // don't steer or deal damage), knockbackFriction, contactDamage, mass (for shoving each other), color
+  // (used by telegraphs and charge trails).
   enemies: {
     grunt: {
       radius: 13, hp: 3, maxSpeed: 115, accel: 650, stunMs: 240, knockbackFriction: 7,
-      contactDamage: 1, mass: 1, color: 0xff4d6d, outline: 0x7a1530,
+      contactDamage: 1, mass: 1, color: 0xff4d6d,
     },
 
     // Stops, telegraphs a line, then charges along it. Dash through or sidestep.
     charger: {
       radius: 12, hp: 2, maxSpeed: 95, accel: 600, stunMs: 240, knockbackFriction: 7,
-      contactDamage: 1, mass: 1, color: 0xff9f1c, outline: 0x7a4300,
+      contactDamage: 1, mass: 1, color: 0xff9f1c,
       triggerRange: 280,  // starts winding up when the player is this close
       telegraphMs: 600,
       aimLockMs: 180,     // stops tracking the player this long before launching
@@ -102,7 +103,7 @@ export const TUNING = {
     // Keeps its distance, strafes and fires slow bullets. Melee swings delete bullets.
     shooter: {
       radius: 12, hp: 2, maxSpeed: 105, accel: 500, stunMs: 240, knockbackFriction: 7,
-      contactDamage: 1, mass: 1, color: 0xb15cff, outline: 0x4a1a7a,
+      contactDamage: 1, mass: 1, color: 0xb15cff,
       preferredRange: 300,
       rangeSlack: 60,     // happy anywhere within preferredRange +/- this
       strafeSpeed: 70,
@@ -119,7 +120,7 @@ export const TUNING = {
     // Telegraphs a big sweeping swing. Back off or dash out of the red area.
     brute: {
       radius: 24, hp: 10, maxSpeed: 70, accel: 300, stunMs: 0, knockbackFriction: 6,
-      contactDamage: 0, mass: 6, color: 0xc0392b, outline: 0x3d0d08,
+      contactDamage: 0, mass: 6, color: 0xc0392b,
       staggerMs: 650,           // stun from a combo finisher (cancels its swing)
       heavyKnockbackScale: 0.4, // finisher knockback multiplier
       attack: {

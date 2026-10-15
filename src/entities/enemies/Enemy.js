@@ -1,16 +1,23 @@
 import Phaser from 'phaser';
 import { TUNING } from '../../tuning.js';
-import { ENEMY_PAD } from '../../textures.js';
+import { ART_SCALE, ENEMY_ART } from '../../art.js';
 import { ySortDepth } from '../depth.js';
 
 // Base enemy: walks at the player. Subclasses override think() and use enter()/stateT for simple
 // state machines. stateT counts seconds of unfrozen time, so hitstop doesn't eat telegraphs.
+const RUN_MIN_SPEED = 20; // px/s; slower than this shows the idle loop
+
 export class Enemy extends Phaser.Physics.Arcade.Sprite {
   constructor(scene, x, y, type) {
-    super(scene, x, y, `enemy-${type}`);
+    const art = ENEMY_ART[type];
+    super(scene, x, y, 'dungeon', `${art.monster}_run_anim_f0`);
     this.type = type;
     this.cfg = TUNING.enemies[type];
     this.radius = this.cfg.radius;
+    this.art = art;
+    this.baseScale = ART_SCALE;
+    this.setOrigin(art.center.x / this.width, art.center.y / this.height);
+    this.play(`${art.monster}_idle`);
     scene.add.existing(this);
     this.setDepth(ySortDepth(y));
 
@@ -28,11 +35,12 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
 
   // Call after adding to a physics group: the group resets body settings when it adopts a child.
   setupBody() {
-    this.body.setCircle(this.radius, ENEMY_PAD, ENEMY_PAD);
+    const r = this.radius / ART_SCALE;
+    this.body.setCircle(r, this.art.center.x - r, this.art.center.y - r);
     this.body.setMass(this.cfg.mass);
     this.setCollideWorldBounds(true);
     this.setScale(0);
-    this.scene.tweens.add({ targets: this, scale: 1, duration: 220, ease: 'Back.easeOut' });
+    this.scene.tweens.add({ targets: this, scale: this.baseScale, duration: 220, ease: 'Back.easeOut' });
   }
 
   enter(mode) {
@@ -132,10 +140,18 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.windupSound = null;
   }
 
-  // The placeholder shapes show facing by rotating; sprite-sheet art will flip instead.
+  // Top edge of the sprite's frame, for things drawn above the enemy.
+  get top() {
+    return this.y - this.displayOriginY * this.baseScale;
+  }
+
   syncVisuals() {
-    this.setRotation(this.facing);
+    this.setFlipX(Math.cos(this.facing) < 0);
     this.setDepth(ySortDepth(this.y));
+    const speed = this.body.velocity.length();
+    const moving = speed >= RUN_MIN_SPEED;
+    this.play(`${this.art.monster}_${moving ? 'run' : 'idle'}`, true);
+    this.anims.timeScale = moving ? Phaser.Math.Clamp(speed / this.cfg.maxSpeed, 0.6, 2) : 1;
   }
 
   die() {
@@ -146,7 +162,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.setAlpha(1).setTintFill(0xffffff);
     this.scene.tweens.add({
       targets: this,
-      scale: 1.6,
+      scale: this.baseScale * 1.6,
       alpha: 0,
       duration: 140,
       ease: 'Quad.easeOut',

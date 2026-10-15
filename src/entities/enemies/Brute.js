@@ -110,7 +110,7 @@ export class Brute extends Enemy {
     if (this.hp >= this.cfg.hp || this.dying) return;
     const w = 40;
     const x = this.x - w / 2;
-    const y = this.y - this.radius - 14;
+    const y = this.top - 4;
     g.fillStyle(0x000000, 0.6).fillRect(x - 1, y - 1, w + 2, 6);
     g.fillStyle(0xff4d6d).fillRect(x, y, w * Math.max(this.hp, 0) / this.cfg.hp, 4);
   }

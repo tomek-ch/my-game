@@ -3,6 +3,16 @@
 
 export const ART_SCALE = 2;
 
+// The monster drawn for each enemy type, and the center of its hit circle in the frame (art pixels,
+// placed so the circle's bottom touches the feet). The scene keeps using the enemy's position as that
+// center, so gameplay doesn't depend on the art.
+export const ENEMY_ART = {
+  grunt: { monster: 'goblin', center: { x: 8, y: 9.5 } },
+  charger: { monster: 'chort', center: { x: 8, y: 17 } },
+  shooter: { monster: 'necromancer', center: { x: 7, y: 17 } },
+  brute: { monster: 'big_demon', center: { x: 16, y: 24 } },
+};
+
 export function preloadArt(scene) {
   scene.load.image('dungeon', 'assets/dungeon/sheet.png');
   scene.load.text('dungeon-frames', 'assets/dungeon/frames.txt');
@@ -18,6 +28,13 @@ export function registerArt(scene) {
 
   loopAnim(scene, 'knight_idle', 'knight_m_idle_anim_f', 4, 6);
   loopAnim(scene, 'knight_run', 'knight_m_run_anim_f', 4, 12);
+
+  // <monster>_idle and <monster>_run; monsters with a single loop use it for both.
+  for (const { monster } of Object.values(ENEMY_ART)) {
+    const single = !texture.has(`${monster}_idle_anim_f0`);
+    loopAnim(scene, `${monster}_idle`, single ? `${monster}_anim_f` : `${monster}_idle_anim_f`, 4, 6);
+    loopAnim(scene, `${monster}_run`, single ? `${monster}_anim_f` : `${monster}_run_anim_f`, 4, 10);
+  }
 
   for (const color of ['red', 'blue']) {
     loopAnim(scene, `fountain_mid_${color}`, `wall_fountain_mid_${color}_anim_f`, 3, 6);
