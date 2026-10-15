@@ -25,7 +25,10 @@ export class GameScene extends Phaser.Scene {
 
     this.player = new Player(this, W / 2, H / 2);
     this.enemies = this.physics.add.group();
-    this.physics.add.collider(this.enemies, this.enemies);
+    // Enemy-vs-enemy contact skips Arcade: its circle separation zeroes both velocities (velocity *
+    // bounce, bounce 0) on every touch, even in overlap-only mode, so packed enemies crawled.
+    // (The world is rebuilt on restart, so this listener needs no cleanup.)
+    this.physics.world.on('worldstep', this.separateEnemies, this);
     this.physics.add.overlap(this.player, this.enemies, (_p, enemy) => this.onPlayerTouched(enemy));
     this.bolts = this.physics.add.group();
     this.physics.add.overlap(this.bolts, this.enemies, (bolt, enemy) => this.onBoltHit(bolt, enemy));
@@ -319,6 +322,36 @@ export class GameScene extends Phaser.Scene {
     const enemy = new ENEMY_TYPES[type](this, x, y);
     this.enemies.add(enemy);
     enemy.setupBody();
+  }
+
+  // Push overlapping enemies apart, the heavier one moving less. Velocity is left to the AI.
+  separateEnemies() {
+    const list = this.enemies.getChildren().filter((e) => e.body?.enable);
+    for (let i = 0; i < list.length; i++) {
+      const a = list[i];
+      for (let j = i + 1; j < list.length; j++) {
+        const b = list[j];
+        let dx = b.body.center.x - a.body.center.x;
+        let dy = b.body.center.y - a.body.center.y;
+        const dist = Math.hypot(dx, dy);
+        const overlap = a.radius + b.radius - dist;
+        if (overlap <= 0) continue;
+        if (dist > 0) {
+          dx /= dist;
+          dy /= dist;
+        } else {
+          dx = 1;
+          dy = 0;
+        }
+        const share = b.body.mass / (a.body.mass + b.body.mass);
+        a.body.x -= dx * overlap * share;
+        a.body.y -= dy * overlap * share;
+        b.body.x += dx * overlap * (1 - share);
+        b.body.y += dy * overlap * (1 - share);
+        a.body.updateCenter();
+        b.body.updateCenter();
+      }
+    }
   }
 
   onPlayerTouched(enemy) {
