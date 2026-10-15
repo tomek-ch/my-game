@@ -8,11 +8,18 @@ export const SPLAT_VARIANTS = 3;
 
 // One character per pixel; '.' is transparent. The bolt points +x.
 const BOLT = [
-  '..OYYYW.',
-  'OYYWWWWW',
-  '..OYYYW.',
+  '.....OOO......',
+  '...OOYYYYW....',
+  '.OOYYYWWWWWY..',
+  'OYYYWWWWWWWWW.',
+  'OYYWWWWWWWWWWW',
+  'OYYYWWWWWWWWW.',
+  '.OOYYYWWWWWY..',
+  '...OOYYYYW....',
+  '.....OOO......',
 ];
-const BOLT_PALETTE = { O: 0xe08a1e, Y: 0xffd34d, W: 0xffffff };
+export const BOLT_TINT = 0xffd34d;
+const BOLT_PALETTE = { O: 0xe08a1e, Y: BOLT_TINT, W: 0xffffff };
 
 const ORB = [
   [

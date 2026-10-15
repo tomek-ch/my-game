@@ -1,3 +1,5 @@
+import Phaser from 'phaser';
+import { TUNING } from '../tuning.js';
 import { BLOOD } from '../textures.js';
 import { pixelText } from './pixelFont.js';
 
@@ -10,35 +12,56 @@ const HEART_H = 12;
 const HEART_GAP = 2;
 const SKULL = { x: 5, y: 7, size: 6 }; // the visible skull inside its 16x16 frame
 const GLYPH_H = 7;     // pixel font letter height
-const ROW_GAP = 8;     // between players' heart rows
+const CHARGE_SCALE = 2;
+const CHARGE_GAP = 3;  // art pixels between charge slots
+const CHARGE_EMPTY = 0x3a2f45;
+const PLAYER_GAP = 12; // between players' hearts-and-charges blocks
 const LABEL_W = 24;    // room for the P1/P2 label in co-op
 const LABEL_COLORS = [0xf2c14e, 0x5ce1ff];
+const R = TUNING.ranged;
 
-// Hearts (one row per player, one heart per HP), a skull with the kill count, the run timer, and the
-// game-over screen.
+// For each player, hearts (one per HP) with the shot charges under them; then a skull with the kill
+// count, the run timer, and the game-over screen.
 export class Hud {
   constructor(scene, maxHp, playerCount = 1) {
     this.scene = scene;
     const labelled = playerCount > 1;
-    const rowH = HEART_H * HEART_SCALE + ROW_GAP;
+    const left = MARGIN + (labelled ? LABEL_W : 0);
+    const boltW = scene.textures.getFrame('bolt').width;
+    const boltH = scene.textures.getFrame('bolt').height;
+
     this.rows = [];
+    let top = MARGIN;
     for (let p = 0; p < playerCount; p++) {
-      const y = MARGIN + p * rowH + HEART_H / 2 * HEART_SCALE;
+      const heartY = top + HEART_H / 2 * HEART_SCALE;
       if (labelled) {
-        this.fixed(pixelText(scene, MARGIN, y, `P${p + 1}`, 2).setOrigin(0, 0.5).setTint(LABEL_COLORS[p % LABEL_COLORS.length]));
+        this.fixed(pixelText(scene, MARGIN, heartY, `P${p + 1}`, 2).setOrigin(0, 0.5).setTint(LABEL_COLORS[p % LABEL_COLORS.length]));
       }
-      const left = MARGIN + (labelled ? LABEL_W : 0);
       const hearts = [];
       for (let i = 0; i < maxHp; i++) {
         const x = left + (i * (HEART_W + HEART_GAP) + HEART_W / 2) * HEART_SCALE;
-        const heart = scene.add.image(x, y, 'dungeon', 'ui_heart_full');
+        const heart = scene.add.image(x, heartY, 'dungeon', 'ui_heart_full');
         hearts.push(this.fixed(heart.setScale(HEART_SCALE)));
       }
-      this.rows.push({ hearts, shownHp: maxHp });
+
+      // One bolt per storable shot: a dark silhouette, with the bolt filling in from the tail as
+      // sword hits add pips.
+      const chargeTop = top + HEART_H * HEART_SCALE + 8;
+      const chargeY = chargeTop + boltH * CHARGE_SCALE / 2;
+      const charges = [];
+      for (let i = 0; i < R.maxCharges; i++) {
+        const x = left + (i * (boltW + CHARGE_GAP) + boltW / 2) * CHARGE_SCALE;
+        const empty = this.fixed(scene.add.image(x, chargeY, 'bolt').setScale(CHARGE_SCALE).setTintFill(CHARGE_EMPTY));
+        const fill = this.fixed(scene.add.image(x, chargeY, 'bolt').setScale(CHARGE_SCALE));
+        charges.push({ x, empty, fill, full: false });
+      }
+
+      this.rows.push({ hearts, shownHp: maxHp, charges });
+      top = chargeTop + boltH * CHARGE_SCALE + PLAYER_GAP;
     }
 
     // Skull placed by its visible pixels, with the count centered on it.
-    const rowTop = MARGIN + playerCount * rowH - ROW_GAP + 12;
+    const rowTop = top;
     this.fixed(scene.add.image(MARGIN, rowTop, 'dungeon', 'skull')
       .setOrigin(SKULL.x / 16, SKULL.y / 16)
       .setScale(UI));
@@ -54,10 +77,13 @@ export class Hud {
     return obj.setScrollFactor(0).setDepth(DEPTH);
   }
 
-  // hps: each player's HP, in HUD row order.
-  update(now, { hps, kills, secs, muted }) {
-    hps.forEach((hp, p) => this.updateHearts(this.rows[p], Math.max(hp, 0), now));
-
+  // players: each player's { hp, pips }, in HUD row order.
+  update(now, { players, kills, secs, muted }) {
+    players.forEach(({ hp, pips }, p) => {
+      const row = this.rows[p];
+      this.updateHearts(row, Math.max(hp, 0), now);
+      this.updateCharges(row, pips);
+    });
     this.kills.setText(String(kills));
     this.timer.setText(`${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`);
     this.muted.setVisible(muted);
@@ -70,6 +96,38 @@ export class Hud {
     // The last heart beats.
     const last = row.hearts[0];
     if (hp === 1 && !last.popping) last.setScale(HEART_SCALE * (1 + 0.12 * Math.max(0, Math.sin(now / 110))));
+  }
+
+  updateCharges(row, pips) {
+    row.charges.forEach((slot, i) => {
+      const frac = Phaser.Math.Clamp((pips - i * R.pipsPerCharge) / R.pipsPerCharge, 0, 1);
+      const { width, height } = slot.fill.frame;
+      slot.fill.setCrop(0, 0, Math.round(width * frac), height).setAlpha(frac < 1 ? 0.45 : 1);
+      const full = frac === 1;
+      if (full && !slot.full) {
+        slot.fill.setScale(CHARGE_SCALE * 1.5);
+        this.scene.tweens.add({ targets: slot.fill, scale: CHARGE_SCALE, duration: 220, ease: 'Back.easeOut' });
+      }
+      slot.full = full;
+    });
+  }
+
+  // Rattle a player's charge slots when they try to shoot with none.
+  shakeCharges(playerIndex) {
+    for (const slot of this.rows[playerIndex].charges) {
+      const targets = [slot.empty, slot.fill];
+      this.scene.tweens.killTweensOf(targets);
+      for (const t of targets) t.setX(slot.x).setScale(CHARGE_SCALE); // also ends a fill pop cut short
+      slot.empty.setTintFill(BLOOD[3]);
+      this.scene.tweens.add({
+        targets,
+        x: slot.x + 4,
+        duration: 35,
+        yoyo: true,
+        repeat: 2,
+        onComplete: () => slot.empty.setTintFill(CHARGE_EMPTY),
+      });
+    }
   }
 
   loseHeart(heart) {

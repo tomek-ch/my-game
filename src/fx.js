@@ -60,9 +60,9 @@ export class Fx {
     this.stains.stamp('px', undefined, Math.round(x / S), Math.round(y / S), { scale: pixels, tint, originX: 0, originY: 0 });
   }
 
-  projectileTrail(x, y, tint) {
+  projectileTrail(x, y, tint, count = 1) {
     this.trail.particleTint = tint;
-    this.trail.emitParticleAt(x, y, 1);
+    this.trail.emitParticleAt(x, y, count);
   }
 
   shake({ duration, intensity }) {
@@ -110,13 +110,13 @@ export class Fx {
     this.scene.tweens.add({ targets: ghost, alpha: 0, duration: 180, onComplete: () => ghost.destroy() });
   }
 
-  // Expanding ring around `owner`, used to signal the dash is back.
-  readyRing(owner, radius) {
+  // Expanding ring around `owner`, used to signal the dash is back or a shot is charged.
+  readyRing(owner, radius, color = 0x5ce1ff) {
     const g = this.scene.add.graphics().setDepth(9);
     const state = { t: 0 };
     const draw = () => {
       const r = radius * (1 + 0.9 * state.t);
-      g.clear().fillStyle(0x5ce1ff, 1 - state.t);
+      g.clear().fillStyle(color, 1 - state.t);
       pixelSector(g, owner.x, owner.y, r - S, r);
     };
     draw();

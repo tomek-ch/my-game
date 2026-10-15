@@ -69,15 +69,34 @@ class Sfx {
 
   shoot() {
     return this.play('shoot', null, null, 0, (o) => [
-      this.tone(o, { type: 'square', freq: 900, to: 320, dur: 0.08, vol: 0.08 }),
-      this.noise(o, { filter: 'highpass', freq: 4000, dur: 0.03, vol: 0.1 }),
+      this.tone(o, { type: 'square', freq: 700, to: 140, dur: 0.18, vol: 0.12 }),
+      this.tone(o, { freq: 160, to: 50, dur: 0.16, vol: 0.5 }),
+      this.noise(o, { freq: 3000, to: 600, q: 0.8, dur: 0.2, vol: 0.35 }),
     ]);
   }
 
   boltHit(x, y) {
     return this.play('boltHit', x, y, 30, (o) => [
-      this.tone(o, { freq: 1400, to: 700, dur: 0.05, vol: 0.12 }),
-      this.noise(o, { freq: 2500, dur: 0.03, vol: 0.18 }),
+      this.tone(o, { freq: 220, to: 60, dur: 0.12, vol: 0.6 }),
+      this.tone(o, { freq: 1400, to: 600, dur: 0.07, vol: 0.12 }),
+      this.noise(o, { freq: 2500, dur: 0.05, vol: 0.25 }),
+    ]);
+  }
+
+  // Bright rising chime when a shot finishes charging.
+  shotReady() {
+    return this.play('shotReady', null, null, 0, (o) => [
+      this.tone(o, { type: 'triangle', freq: 880, dur: 0.06, vol: 0.1 }),
+      this.tone(o, { type: 'triangle', freq: 1320, dur: 0.08, vol: 0.1, delay: 0.05 }),
+      this.tone(o, { freq: 2640, dur: 0.1, vol: 0.04, delay: 0.05 }),
+    ]);
+  }
+
+  // Dull click for trying to shoot without a charge.
+  shotEmpty() {
+    return this.play('shotEmpty', null, null, 80, (o) => [
+      this.tone(o, { type: 'square', freq: 140, to: 90, dur: 0.06, vol: 0.06 }),
+      this.noise(o, { filter: 'lowpass', freq: 900, dur: 0.03, vol: 0.15 }),
     ]);
   }
 

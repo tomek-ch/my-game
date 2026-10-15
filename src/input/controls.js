@@ -10,7 +10,6 @@ export class Controls {
   constructor() {
     this.move = new Phaser.Math.Vector2(); // normalized, or zero
     this.aimAngle = null;                  // radians, or null to keep the current aim
-    this.shootHeld = false;                // holding fire auto-fires at the cooldown rate
     // When each button was last pressed, so presses can be buffered for a moment.
     this.attackQueuedAt = -Infinity;
     this.shootQueuedAt = -Infinity;
@@ -55,7 +54,6 @@ export class MouseKeyboardControls extends Controls {
 
     const aim = this.scene.cameras.main.getWorldPoint(this.pointer.x, this.pointer.y);
     this.aimAngle = Math.atan2(aim.y - player.y, aim.x - player.x);
-    this.shootHeld = this.pointer.rightButtonDown();
   }
 }
 
@@ -103,7 +101,5 @@ export class PadOrKeysControls extends Controls {
     if (aim && aim.length() > AIM_DEADZONE) this.aimAngle = aim.angle();
     else if (this.move.lengthSq() > 0) this.aimAngle = this.move.angle();
     else this.aimAngle = null;
-
-    this.shootHeld = this.keys.shoot.isDown || PAD.shoot.some((i) => pad?.buttons[i]?.pressed);
   }
 }
