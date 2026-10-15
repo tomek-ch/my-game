@@ -3,7 +3,7 @@ import { createTextures } from '../textures.js';
 import { preloadArt, registerArt } from '../art.js';
 import { registerPixelFont } from '../ui/pixelFont.js';
 
-// Loads and builds every texture once, then hands over to the game.
+// Loads and builds every texture once, then shows the start screen.
 export class BootScene extends Phaser.Scene {
   constructor() {
     super('boot');
@@ -17,6 +17,6 @@ export class BootScene extends Phaser.Scene {
     registerArt(this);
     createTextures(this);
     registerPixelFont(this);
-    this.scene.start('game');
+    this.scene.start('start');
   }
 }
