@@ -71,6 +71,11 @@ export class GameScene extends Phaser.Scene {
     this.startedAt = this.time.now;
     this.isOver = false;
 
+    // Arcade copies body positions onto sprites after update(), so anything placed relative to a
+    // sprite is synced here; doing it in update() drew it a frame behind.
+    this.events.on('postupdate', this.syncVisuals, this);
+    this.events.once('shutdown', () => this.events.off('postupdate', this.syncVisuals, this));
+
     this.hud = this.add.text(16, 12, '', { fontFamily: 'monospace', fontSize: '20px', color: '#e8e8f0' })
       .setScrollFactor(0)
       .setDepth(100);
@@ -100,10 +105,8 @@ export class GameScene extends Phaser.Scene {
     for (const enemy of this.enemies.getChildren()) {
       if (enemy.dying) continue;
       enemy.tick(this.player, dt, now);
-      enemy.syncVisuals();
     }
 
-    this.player.syncVisuals(now);
     this.updateCameraLookahead(pointer);
     this.updateHud(now);
   }
@@ -322,6 +325,14 @@ export class GameScene extends Phaser.Scene {
     const enemy = new ENEMY_TYPES[type](this, x, y);
     this.enemies.add(enemy);
     enemy.setupBody();
+  }
+
+  syncVisuals() {
+    if (this.isOver) return;
+    for (const enemy of this.enemies.getChildren()) {
+      if (!enemy.dying) enemy.syncVisuals();
+    }
+    this.player.syncVisuals(this.time.now);
   }
 
   // Push overlapping enemies apart, the heavier one moving less. Velocity is left to the AI.
