@@ -130,6 +130,33 @@ export class Fx {
     });
   }
 
+  // A ground slam: a ring that races out to `radius` and fades, with dust kicked up along it.
+  slam(x, y, radius, color) {
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      this.sparks.explode(3, x + Math.cos(a) * radius * 0.6, y + Math.sin(a) * radius * 0.6);
+    }
+    const g = this.scene.add.graphics().setDepth(9);
+    const state = { t: 0 };
+    const draw = () => {
+      const r = radius * (0.3 + 0.7 * state.t);
+      g.clear();
+      g.fillStyle(color, 0.25 * (1 - state.t));
+      pixelSector(g, x, y, 0, r);
+      g.fillStyle(color, 1 - state.t);
+      pixelSector(g, x, y, r - 2 * S, r);
+    };
+    draw();
+    this.scene.tweens.add({
+      targets: state,
+      t: 1,
+      duration: 260,
+      ease: 'Quad.easeOut',
+      onUpdate: draw,
+      onComplete: () => g.destroy(),
+    });
+  }
+
   // A crescent that sweeps across the swing arc (direction from swing.sweep), follows `owner`, then fades.
   slash(owner, angle, { range, arcDeg, sweep, finisher, color }) {
     const half = Phaser.Math.DegToRad(arcDeg) / 2;

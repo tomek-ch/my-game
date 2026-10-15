@@ -160,6 +160,23 @@ class Sfx {
     ]);
   }
 
+  // Grunt and whoosh as the brute leaps.
+  bruteJump(x, y) {
+    return this.play('bruteJump', x, y, 0, (o) => [
+      this.noise(o, { freq: 300, to: 1400, q: 0.8, dur: 0.35, vol: 0.35, attack: 0.08 }),
+      this.tone(o, { type: 'triangle', freq: 90, to: 180, dur: 0.18, vol: 0.25 }),
+    ]);
+  }
+
+  // Ground-shaking thud when the brute lands.
+  bruteSlam(x, y) {
+    return this.play('bruteSlam', x, y, 0, (o) => [
+      this.tone(o, { freq: 70, to: 28, dur: 0.45, vol: 0.9 }),
+      this.noise(o, { filter: 'lowpass', freq: 1200, to: 150, dur: 0.4, vol: 0.7 }),
+      this.noise(o, { filter: 'highpass', freq: 2500, dur: 0.05, vol: 0.25 }),
+    ]);
+  }
+
   // Metallic clang when a finisher staggers a brute.
   bruteStagger(x, y) {
     return this.play('bruteStagger', x, y, 0, (o) => [

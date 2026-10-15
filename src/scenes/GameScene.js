@@ -326,6 +326,25 @@ export class GameScene extends Phaser.Scene {
     enemy.die();
   }
 
+  // An enemy's attack landing on the other enemies (the brute's swing and slam): everyone that
+  // `inArea(enemy)` accepts is knocked away from (x, y). Kills count as the player's.
+  hitEnemies(source, x, y, inArea, { damage, knockback, stunMs }) {
+    const now = this.time.now;
+    for (const enemy of [...this.enemies.getChildren()]) {
+      if (enemy === source || enemy.dying || enemy.airborne || !inArea(enemy)) continue;
+      const dir = new Phaser.Math.Vector2(enemy.x - x, enemy.y - y);
+      if (dir.lengthSq() < 0.01) dir.setToPolar(Math.random() * Math.PI * 2);
+      dir.normalize();
+      this.fx.hitSparks(enemy.x - dir.x * enemy.radius, enemy.y - dir.y * enemy.radius);
+      if (enemy.takeHit({ damage, dir, knockback, stunMs, heavy: true }, now)) {
+        this.killEnemy(enemy);
+      } else {
+        this.fx.flash(enemy);
+        this.fx.squash(enemy, 0.3);
+      }
+    }
+  }
+
   spawnEnemy(x, y, type) {
     const enemy = new ENEMY_TYPES[type](this, x, y);
     this.enemies.add(enemy);
@@ -342,7 +361,7 @@ export class GameScene extends Phaser.Scene {
 
   // Push overlapping enemies apart, the heavier one moving less. Velocity is left to the AI.
   separateEnemies() {
-    const list = this.enemies.getChildren().filter((e) => e.body?.enable);
+    const list = this.enemies.getChildren().filter((e) => e.body?.enable && !e.airborne);
     for (let i = 0; i < list.length; i++) {
       const a = list[i];
       for (let j = i + 1; j < list.length; j++) {

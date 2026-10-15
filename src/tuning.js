@@ -117,7 +117,8 @@ export const TUNING = {
     },
 
     // Slow and tanky; light hits don't flinch it, only the combo finisher staggers it.
-    // Telegraphs a big sweeping swing. Back off or dash out of the red area.
+    // Up close it telegraphs a big sweeping swing; from mid range it leaps at you and slams the
+    // ground. Both hit other enemies too, and both leave it open for a moment afterwards.
     brute: {
       radius: 24, hp: 10, maxSpeed: 70, accel: 300, stunMs: 0, knockbackFriction: 6,
       contactDamage: 0, mass: 6, color: 0xc0392b,
@@ -135,6 +136,22 @@ export const TUNING = {
         lunge: 40,
         shake: { duration: 120, intensity: 0.007 },
       },
+      jump: {
+        minRange: 150,          // leaps when the player's edge is between these distances
+        maxRange: 340,
+        maxLeap: 300,           // never lands further than this from where it took off
+        crouchMs: 550,          // landing spot follows the player, then locks on takeoff
+        airMs: 520,
+        height: 90,             // peak of the arc, visual only
+        radius: 85,             // slam area around the landing spot
+        recoverMs: 950,         // stuck after landing: the opening to punish it
+        cooldownMs: 2600,       // counted from the end of recovery
+        damage: 2,
+        knockback: 700,
+        shake: { duration: 180, intensity: 0.012 },
+      },
+      // Its swing and slam also hit other enemies. Enough to kill a grunt, charger or shooter outright.
+      friendlyFire: { damage: 3, knockback: 520, stunMs: 400 },
     },
   },
 
