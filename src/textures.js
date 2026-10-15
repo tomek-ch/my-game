@@ -35,9 +35,6 @@ export function createTextures(scene) {
   g.fillStyle(0xffffff).fillCircle(7, 7, 3.5);
   g.generateTexture('ebullet', 14, 14).clear();
 
-  g.fillStyle(0xffffff).fillTriangle(0, 0, 10, 5, 0, 10);
-  g.generateTexture('aim', 10, 10).clear();
-
   g.fillStyle(0xffd34d).fillRoundedRect(0, 0, 16, 6, 3);
   g.fillStyle(0xffffff).fillRoundedRect(4, 1.5, 10, 3, 1.5);
   g.generateTexture('bolt', 16, 6).clear();

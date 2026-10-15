@@ -45,8 +45,6 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.nextDashAt = 0;
     this.dashInvulnUntil = 0;
 
-    this.aimMarker = scene.add.image(x, y, 'aim').setDepth(11);
-
     this.sword = scene.add.image(x, y, 'dungeon', 'weapon_knight_sword').setScale(ART_SCALE).setOrigin(0.5, 0.8);
     this.swordSide = -1;    // which side of the aim it rests on: -1 or 1
     this.swordAngle = -SWORD_REST;
@@ -139,9 +137,6 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const dt = Math.min(now - this.lastSyncAt, 50) / 1000;
     this.lastSyncAt = now;
 
-    const d = T.radius + 9;
-    this.aimMarker.setPosition(this.x + Math.cos(this.aimAngle) * d, this.y + Math.sin(this.aimAngle) * d);
-    this.aimMarker.setRotation(this.aimAngle);
     const blink = now < this.invulnUntil && Math.floor(now / 60) % 2 === 0;
     this.setAlpha(blink ? 0.35 : 1);
     this.setFlipX(Math.cos(this.aimAngle) < 0);
@@ -196,6 +191,5 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.setFrame('knight_m_hit_anim_f0');
     this.setAlpha(1).setTint(0x555566);
     this.sword.setAlpha(1).setTint(0x555566);
-    this.aimMarker.setVisible(false);
   }
 }
