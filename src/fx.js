@@ -38,11 +38,13 @@ export class Fx {
     });
   }
 
+  // Scale effects are relative to sprite.baseScale (sprite-sheet art is drawn larger than 1).
   squash(sprite, amount = 0.3, ms = 90) {
+    const base = sprite.baseScale ?? 1;
     this.scene.tweens.add({
       targets: sprite,
-      scaleX: 1 + amount,
-      scaleY: 1 - amount,
+      scaleX: base * (1 + amount),
+      scaleY: base * (1 - amount),
       duration: ms / 2,
       yoyo: true,
       ease: 'Quad.easeOut',
@@ -53,12 +55,14 @@ export class Fx {
   dashStart(sprite, angle) {
     this.sparks.explode(6, sprite.x - Math.cos(angle) * 10, sprite.y - Math.sin(angle) * 10);
     const horizontal = Math.abs(Math.cos(angle)) >= Math.abs(Math.sin(angle));
-    sprite.setScale(horizontal ? 1.4 : 0.7, horizontal ? 0.7 : 1.4);
-    this.scene.tweens.add({ targets: sprite, scaleX: 1, scaleY: 1, duration: 220, ease: 'Quad.easeOut' });
+    const base = sprite.baseScale ?? 1;
+    sprite.setScale(base * (horizontal ? 1.4 : 0.7), base * (horizontal ? 0.7 : 1.4));
+    this.scene.tweens.add({ targets: sprite, scaleX: base, scaleY: base, duration: 220, ease: 'Quad.easeOut' });
   }
 
   afterimage(sprite, color = 0x5ce1ff) {
-    const ghost = this.scene.add.image(sprite.x, sprite.y, sprite.texture.key)
+    const ghost = this.scene.add.image(sprite.x, sprite.y, sprite.texture.key, sprite.frame.name)
+      .setOrigin(sprite.originX, sprite.originY)
       .setRotation(sprite.rotation)
       .setFlipX(sprite.flipX)
       .setScale(sprite.scaleX, sprite.scaleY)

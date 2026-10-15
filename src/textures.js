@@ -1,8 +1,6 @@
 import { TUNING } from './tuning.js';
 
 export const COLORS = {
-  player: 0x5ce1ff,
-  playerOutline: 0xe8fbff,
   enemyBullet: 0xd78bff,
 };
 
@@ -12,11 +10,6 @@ export const ENEMY_PAD = 6;
 // Placeholder textures generated from shapes, used until each entity gets sprite-sheet art.
 export function createTextures(scene) {
   const g = scene.make.graphics({}, false);
-
-  const pr = TUNING.player.radius;
-  g.fillStyle(COLORS.player).fillCircle(pr, pr, pr);
-  g.lineStyle(3, COLORS.playerOutline).strokeCircle(pr, pr, pr - 1.5);
-  g.generateTexture('player', pr * 2, pr * 2).clear();
 
   // Enemies face +x; extras are drawn in front of the body.
   for (const [type, cfg] of Object.entries(TUNING.enemies)) {

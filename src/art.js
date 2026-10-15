@@ -16,6 +16,9 @@ export function registerArt(scene) {
     if (rect.length === 4) texture.add(name, 0, ...rect.map(Number));
   }
 
+  loopAnim(scene, 'knight_idle', 'knight_m_idle_anim_f', 4, 6);
+  loopAnim(scene, 'knight_run', 'knight_m_run_anim_f', 4, 12);
+
   for (const color of ['red', 'blue']) {
     loopAnim(scene, `fountain_mid_${color}`, `wall_fountain_mid_${color}_anim_f`, 3, 6);
     loopAnim(scene, `fountain_basin_${color}`, `wall_fountain_basin_${color}_anim_f`, 3, 6);

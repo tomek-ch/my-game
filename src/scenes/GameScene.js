@@ -171,6 +171,7 @@ export class GameScene extends Phaser.Scene {
     }
     p.step(angle, stepDist, M.stepMs);
     this.fx.slash(p, angle, swing);
+    p.swingSword(angle, swing, now);
     sfx.swing(swing.finisher);
 
     // Resolve hits from where the step ends, so the swing lands where it's drawn.
@@ -423,8 +424,7 @@ export class GameScene extends Phaser.Scene {
     this.updateHud(this.time.now);
     this.spawner.stop();
     this.physics.world.pause();
-    this.player.setAlpha(1).setTint(0x555566);
-    this.player.aimMarker.setVisible(false);
+    this.player.showDead();
 
     const { width, height } = this.cameras.main;
     this.add.text(width / 2, height / 2, `YOU DIED\n\n${this.kills} kills\n\nclick or press R to restart`, {
