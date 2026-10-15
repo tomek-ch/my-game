@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { Enemy } from './Enemy.js';
 import { sfx } from '../../audio/sfx.js';
+import { pixelDisk } from '../../pixelShapes.js';
 
 // Holds a preferred distance while strafing; periodically stops to aim and fire one bullet.
 export class Shooter extends Enemy {
@@ -53,7 +54,7 @@ export class Shooter extends Enemy {
     const g = this.telegraph();
     const d = this.radius + 8;
     g.fillStyle(this.cfg.color, 0.4 + progress * 0.5);
-    g.fillCircle(this.x + Math.cos(this.facing) * d, this.y + Math.sin(this.facing) * d, 2 + progress * 5);
+    pixelDisk(g, this.x + Math.cos(this.facing) * d, this.y + Math.sin(this.facing) * d, 2 + progress * 5);
   }
 
   fire() {

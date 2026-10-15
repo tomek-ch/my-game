@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { Enemy } from './Enemy.js';
 import { sfx } from '../../audio/sfx.js';
+import { pixelLine } from '../../pixelShapes.js';
 
 // chase -> telegraph (stops, shows its path) -> charge -> recover (dazed) -> chase
 export class Charger extends Enemy {
@@ -49,8 +50,8 @@ export class Charger extends Enemy {
   drawPath(progress) {
     const g = this.telegraph();
     const len = this.cfg.chargeDistance;
-    g.lineStyle(2 + progress * 6, this.cfg.color, 0.15 + progress * 0.45);
-    g.lineBetween(this.x, this.y, this.x + Math.cos(this.aim) * len, this.y + Math.sin(this.aim) * len);
+    g.fillStyle(this.cfg.color, 0.15 + progress * 0.45);
+    pixelLine(g, this.x, this.y, this.x + Math.cos(this.aim) * len, this.y + Math.sin(this.aim) * len, 2 + progress * 6);
     const blink = progress > 0.5 && Math.floor(this.stateT * 1000 / 70) % 2 === 0;
     if (blink) this.setTintFill(0xffffff);
     else this.clearTint();

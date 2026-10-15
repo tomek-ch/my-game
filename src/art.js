@@ -3,14 +3,14 @@
 
 export const ART_SCALE = 2;
 
-// The monster drawn for each enemy type, and the center of its hit circle in the frame (art pixels,
-// placed so the circle's bottom touches the feet). The scene keeps using the enemy's position as that
-// center, so gameplay doesn't depend on the art.
+// The monster drawn for each enemy type, the center of its hit circle in the frame (art pixels,
+// placed so the circle's bottom touches the feet), and its shadow width (art pixels). The scene keeps
+// using the enemy's position as that center, so gameplay doesn't depend on the art.
 export const ENEMY_ART = {
-  grunt: { monster: 'goblin', center: { x: 8, y: 9.5 } },
-  charger: { monster: 'chort', center: { x: 8, y: 17 } },
-  shooter: { monster: 'necromancer', center: { x: 7, y: 17 } },
-  brute: { monster: 'big_demon', center: { x: 16, y: 24 } },
+  grunt: { monster: 'goblin', center: { x: 8, y: 9.5 }, shadow: 10 },
+  charger: { monster: 'chort', center: { x: 8, y: 17 }, shadow: 12 },
+  shooter: { monster: 'necromancer', center: { x: 7, y: 17 }, shadow: 12 },
+  brute: { monster: 'big_demon', center: { x: 16, y: 24 }, shadow: 24 },
 };
 
 export function preloadArt(scene) {

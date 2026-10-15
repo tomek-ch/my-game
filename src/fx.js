@@ -1,30 +1,68 @@
 import Phaser from 'phaser';
+import { TUNING } from './tuning.js';
+import { ART_SCALE } from './art.js';
+import { BLOOD, SPLAT_VARIANTS } from './textures.js';
+import { pixelSector } from './pixelShapes.js';
 
-// Visual juice: particles, slashes, flashes, shake.
+const S = ART_SCALE;
+const BLOOD_DEPTH = 1;    // stains: above the floor, below shadows and characters
+const BLOOD_GRAVITY = 700; // droplets arc up and fall back to the floor
+
+// Visual juice: particles, blood, slashes, flashes, shake.
 export class Fx {
   constructor(scene) {
     this.scene = scene;
-    this.sparks = scene.add.particles(0, 0, 'dot', {
+    this.sparks = scene.add.particles(0, 0, 'px', {
       speed: { min: 140, max: 340 },
       lifespan: { min: 100, max: 240 },
-      scale: { start: 0.8, end: 0 },
+      scale: { start: S * 2, end: S },
       emitting: false,
     }).setDepth(20);
-    this.gore = scene.add.particles(0, 0, 'dot', {
-      speed: { min: 60, max: 300 },
-      lifespan: { min: 250, max: 550 },
-      scale: { start: 1.3, end: 0 },
-      tint: [0xff4d6d, 0xff8fa3, 0xffffff],
+
+    // Everything that lands stays: stains are drawn into one floor-sized texture at art resolution.
+    const { width: W, height: H } = TUNING.world;
+    this.stains = scene.add.renderTexture(0, 0, W / S, H / S).setOrigin(0).setScale(S).setDepth(BLOOD_DEPTH);
+
+    this.blood = scene.add.particles(0, 0, 'px', {
+      speedX: { min: -170, max: 170 },
+      speedY: { min: -320, max: -60 },
+      gravityY: BLOOD_GRAVITY,
+      lifespan: { min: 280, max: 520 },
+      scale: [S, S, S * 2],
+      tint: BLOOD,
       emitting: false,
+      deathCallback: (p) => this.stain(p.x, p.y, p.scaleX / S, p.tint),
     }).setDepth(20);
+
+    // Short-lived pixels left behind by moving projectiles.
+    this.trail = scene.add.particles(0, 0, 'px', {
+      lifespan: { min: 90, max: 160 },
+      scale: { start: S, end: S / 2 },
+      alpha: { start: 0.9, end: 0 },
+      speed: { min: 0, max: 20 },
+      emitting: false,
+    }).setDepth(11);
   }
 
   hitSparks(x, y) {
     this.sparks.explode(7, x, y);
   }
 
-  deathBurst(x, y) {
-    this.gore.explode(18, x, y);
+  // A spray of droplets that stain the floor where they land, and a splat under the body.
+  // `feetY` is where the body touches the floor; `size` scales the splat (1 for a normal enemy).
+  bloodBurst(x, y, feetY, size = 1) {
+    this.blood.explode(Math.round(18 * size), x, y);
+    const key = `splat-${Phaser.Math.Between(0, SPLAT_VARIANTS - 1)}`;
+    this.stains.stamp(key, undefined, x / S, feetY / S, { scale: size, rotation: Phaser.Math.Between(0, 1) * Math.PI });
+  }
+
+  stain(x, y, pixels, tint) {
+    this.stains.stamp('px', undefined, Math.round(x / S), Math.round(y / S), { scale: pixels, tint, originX: 0, originY: 0 });
+  }
+
+  projectileTrail(x, y, tint) {
+    this.trail.particleTint = tint;
+    this.trail.emitParticleAt(x, y, 1);
   }
 
   shake({ duration, intensity }) {
@@ -68,21 +106,26 @@ export class Fx {
       .setScale(sprite.scaleX, sprite.scaleY)
       .setTint(color)
       .setAlpha(0.5)
-      .setDepth(sprite.depth - 1);
+      .setDepth(sprite.depth - 0.001);
     this.scene.tweens.add({ targets: ghost, alpha: 0, duration: 180, onComplete: () => ghost.destroy() });
   }
 
   // Expanding ring around `owner`, used to signal the dash is back.
   readyRing(owner, radius) {
-    const g = this.scene.add.graphics().setDepth(9).setPosition(owner.x, owner.y);
-    g.lineStyle(2, 0x5ce1ff).strokeCircle(0, 0, radius);
+    const g = this.scene.add.graphics().setDepth(9);
+    const state = { t: 0 };
+    const draw = () => {
+      const r = radius * (1 + 0.9 * state.t);
+      g.clear().fillStyle(0x5ce1ff, 1 - state.t);
+      pixelSector(g, owner.x, owner.y, r - S, r);
+    };
+    draw();
     this.scene.tweens.add({
-      targets: g,
-      scale: 1.9,
-      alpha: 0,
+      targets: state,
+      t: 1,
       duration: 260,
       ease: 'Quad.easeOut',
-      onUpdate: () => g.setPosition(owner.x, owner.y),
+      onUpdate: draw,
       onComplete: () => g.destroy(),
     });
   }
@@ -101,14 +144,14 @@ export class Fx {
       // First 40% of the time the arc sweeps out, the rest it fades.
       const grow = Math.min(state.t / 0.4, 1);
       const fade = state.t < 0.4 ? 1 : 1 - (state.t - 0.4) / 0.6;
-      const head = from + span * Phaser.Math.Easing.Cubic.Out(grow);
-      g.clear().setPosition(owner.x, owner.y);
-      g.fillStyle(color, 0.95 * fade);
-      g.beginPath();
-      g.arc(0, 0, range, from, head, sweep < 0);
-      g.arc(0, 0, inner, head, from, sweep > 0);
-      g.closePath();
-      g.fillPath();
+      const swept = span * Phaser.Math.Easing.Cubic.Out(grow);
+      g.clear();
+      // A faint body with a bright rim along the outside of the arc.
+      const rim = range - 2 * S;
+      g.fillStyle(color, 0.45 * fade);
+      pixelSector(g, owner.x, owner.y, inner, rim, from, swept);
+      g.fillStyle(color, fade);
+      pixelSector(g, owner.x, owner.y, rim, range, from, swept);
     };
 
     draw();

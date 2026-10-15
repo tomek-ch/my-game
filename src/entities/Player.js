@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { TUNING } from '../tuning.js';
 import { ySortDepth } from './depth.js';
 import { ART_SCALE } from '../art.js';
+import { Shadow } from './Shadow.js';
 
 const T = TUNING.player;
 const D = TUNING.dash;
@@ -27,6 +28,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.setScale(ART_SCALE).setOrigin(BODY_CENTER.x / this.width, BODY_CENTER.y / this.height);
     this.body.setCircle(r, BODY_CENTER.x - r, BODY_CENTER.y - r);
     this.play('knight_idle');
+    this.shadow = new Shadow(this, 12, T.radius);
     this.setCollideWorldBounds(true);
     this.setDepth(ySortDepth(y));
 
@@ -136,6 +138,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   syncVisuals(now) {
     const dt = Math.min(now - this.lastSyncAt, 50) / 1000;
     this.lastSyncAt = now;
+    this.shadow.sync();
 
     const blink = now < this.invulnUntil && Math.floor(now / 60) % 2 === 0;
     this.setAlpha(blink ? 0.35 : 1);

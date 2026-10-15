@@ -2,6 +2,8 @@ import Phaser from 'phaser';
 import { TUNING } from '../../tuning.js';
 import { Enemy } from './Enemy.js';
 import { sfx } from '../../audio/sfx.js';
+import { ART_SCALE } from '../../art.js';
+import { pixelSector } from '../../pixelShapes.js';
 
 const LUNGE_SECS = 0.1;
 
@@ -43,26 +45,19 @@ export class Brute extends Enemy {
     }
   }
 
-  // Faint outline of the whole danger zone, plus a fill that grows outward as the swing approaches.
+  // Faint fill of the whole danger zone with a rim at its reach, plus a fill that grows outward as the
+  // swing approaches.
   drawArea(progress) {
     const a = this.cfg.attack;
-    const half = Phaser.Math.DegToRad(a.arcDeg) / 2;
+    const arc = Phaser.Math.DegToRad(a.arcDeg);
+    const from = this.aim - arc / 2;
     const g = this.telegraph();
-    const fan = (radius) => {
-      g.beginPath();
-      g.moveTo(this.x, this.y);
-      g.arc(this.x, this.y, radius, this.aim - half, this.aim + half, false);
-      g.closePath();
-    };
     g.fillStyle(0xff3040, 0.12);
-    fan(a.reach);
-    g.fillPath();
-    g.lineStyle(2, 0xff3040, 0.5);
-    fan(a.reach);
-    g.strokePath();
+    pixelSector(g, this.x, this.y, 0, a.reach - ART_SCALE, from, arc);
+    g.fillStyle(0xff3040, 0.5);
+    pixelSector(g, this.x, this.y, a.reach - ART_SCALE, a.reach, from, arc);
     g.fillStyle(0xff3040, 0.15 + progress * 0.25);
-    fan(a.reach * progress);
-    g.fillPath();
+    pixelSector(g, this.x, this.y, 0, a.reach * progress, from, arc);
   }
 
   swing(player) {

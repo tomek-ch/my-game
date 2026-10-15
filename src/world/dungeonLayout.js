@@ -3,17 +3,9 @@
 // The floor covers cols x rows tiles starting at (0, 0). The north wall stands above it (rows -2 and -1);
 // the other walls are a rim drawn over the outermost floor tiles.
 
-export const TILE = 16;
+import { seededRandom } from '../random.js';
 
-// Small seeded RNG so the room looks the same every run.
-function mulberry32(seed) {
-  return () => {
-    seed = (seed + 0x6d2b79f5) | 0;
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+export const TILE = 16;
 
 function pick(rng, weighted) {
   const total = weighted.reduce((sum, [, w]) => sum + w, 0);
@@ -37,7 +29,7 @@ const BANNERS = ['wall_banner_red', 'wall_banner_blue', 'wall_banner_green', 'wa
 // Returns { tiles: [{ frame, x, y }], fountains: [{ color, x, y }], bounds: { x, y, width, height } }.
 // tiles are drawn in order; fountains are animated, so the scene adds them as sprites.
 export function dungeonLayout(cols, rows, seed = 4) {
-  const rng = mulberry32(seed);
+  const rng = seededRandom(seed);
   const tiles = [];
   const fountains = [];
   const put = (frame, col, row) => tiles.push({ frame, x: col * TILE, y: row * TILE });

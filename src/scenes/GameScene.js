@@ -4,6 +4,7 @@ import { Player } from '../entities/Player.js';
 import { ENEMY_TYPES } from '../entities/enemies/index.js';
 import { Spawner } from '../systems/Spawner.js';
 import { addDungeon } from '../world/dungeon.js';
+import { ART_SCALE } from '../art.js';
 import { Fx } from '../fx.js';
 import { sfx } from '../audio/sfx.js';
 
@@ -235,8 +236,9 @@ export class GameScene extends Phaser.Scene {
     const y = p.y + Math.sin(angle) * muzzle;
 
     // Configure after create(): the group resets body settings when it adopts a child.
-    const bolt = this.bolts.create(x, y, 'bolt');
-    bolt.body.setSize(8, 8);
+    const bolt = this.bolts.create(x, y, 'bolt').setScale(ART_SCALE);
+    bolt.body.setSize(4, 4); // art pixels: 8x8 on screen
+    bolt.trailTint = 0xffd34d;
     bolt.setVelocity(Math.cos(angle) * R.speed, Math.sin(angle) * R.speed);
     bolt.setRotation(angle).setDepth(12).setBlendMode(Phaser.BlendModes.ADD);
     bolt.startX = x;
@@ -255,15 +257,19 @@ export class GameScene extends Phaser.Scene {
     for (const shot of [...group.getChildren()]) {
       const travelled = Phaser.Math.Distance.Between(shot.startX, shot.startY, shot.x, shot.y);
       const outside = shot.x < 0 || shot.y < 0 || shot.x > W || shot.y > H;
-      if (travelled < shot.maxRange && !outside) continue;
+      if (travelled < shot.maxRange && !outside) {
+        this.fx.projectileTrail(shot.x, shot.y, shot.trailTint);
+        continue;
+      }
       this.fx.hitSparks(shot.x, shot.y);
       shot.destroy();
     }
   }
 
   spawnEnemyBullet(x, y, angle, cfg) {
-    const bullet = this.enemyBullets.create(x, y, 'ebullet');
-    bullet.body.setCircle(5, 2, 2);
+    const bullet = this.enemyBullets.create(x, y, 'orb-0').setScale(ART_SCALE).play('orb');
+    bullet.body.setCircle(2.5, 1, 1); // art pixels: radius 5 on screen
+    bullet.trailTint = 0xb15cff;
     bullet.setVelocity(Math.cos(angle) * cfg.bulletSpeed, Math.sin(angle) * cfg.bulletSpeed);
     bullet.setDepth(12);
     bullet.startX = x;
@@ -316,7 +322,7 @@ export class GameScene extends Phaser.Scene {
 
   killEnemy(enemy) {
     this.kills++;
-    this.fx.deathBurst(enemy.x, enemy.y);
+    this.fx.bloodBurst(enemy.x, enemy.y - enemy.radius * 0.5, enemy.y + enemy.radius, enemy.radius / TUNING.enemies.grunt.radius);
     sfx.kill(enemy.x, enemy.y);
     enemy.die();
   }
@@ -425,6 +431,7 @@ export class GameScene extends Phaser.Scene {
     this.spawner.stop();
     this.physics.world.pause();
     this.player.showDead();
+    this.fx.bloodBurst(this.player.x, this.player.y, this.player.y + TUNING.player.radius);
 
     const { width, height } = this.cameras.main;
     this.add.text(width / 2, height / 2, `YOU DIED\n\n${this.kills} kills\n\nclick or press R to restart`, {
