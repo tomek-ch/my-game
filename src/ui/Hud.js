@@ -1,3 +1,5 @@
+import Phaser from 'phaser';
+import { TUNING } from '../tuning.js';
 import { BLOOD } from '../textures.js';
 import { pixelText } from './pixelFont.js';
 
@@ -10,8 +12,13 @@ const HEART_H = 12;
 const HEART_GAP = 2;
 const SKULL = { x: 5, y: 7, size: 6 }; // the visible skull inside its 16x16 frame
 const GLYPH_H = 7;     // pixel font letter height
+const CHARGE_SCALE = 2;
+const CHARGE_GAP = 3;  // art pixels between charge slots
+const CHARGE_EMPTY = 0x3a2f45;
+const R = TUNING.ranged;
 
-// Hearts (one per HP), a skull with the kill count, the run timer, and the game-over screen.
+// Hearts (one per HP), the shot charges, a skull with the kill count, the run timer, and the
+// game-over screen.
 export class Hud {
   constructor(scene, maxHp) {
     this.scene = scene;
@@ -23,8 +30,22 @@ export class Hud {
       this.hearts.push(this.fixed(heart.setScale(HEART_SCALE)));
     }
 
+    // One bolt per storable shot: a dark silhouette, with the bolt filling in from the tail as
+    // sword hits add pips.
+    const boltW = scene.textures.getFrame('bolt').width;
+    const boltH = scene.textures.getFrame('bolt').height;
+    const chargeTop = MARGIN + HEART_H * HEART_SCALE + 8;
+    const chargeY = chargeTop + boltH * CHARGE_SCALE / 2;
+    this.charges = [];
+    for (let i = 0; i < R.maxCharges; i++) {
+      const x = MARGIN + (i * (boltW + CHARGE_GAP) + boltW / 2) * CHARGE_SCALE;
+      const empty = this.fixed(scene.add.image(x, chargeY, 'bolt').setScale(CHARGE_SCALE).setTintFill(CHARGE_EMPTY));
+      const fill = this.fixed(scene.add.image(x, chargeY, 'bolt').setScale(CHARGE_SCALE));
+      this.charges.push({ x, empty, fill, full: false });
+    }
+
     // Skull placed by its visible pixels, with the count centered on it.
-    const rowTop = MARGIN + HEART_H * HEART_SCALE + 12;
+    const rowTop = chargeTop + boltH * CHARGE_SCALE + 12;
     this.fixed(scene.add.image(MARGIN, rowTop, 'dungeon', 'skull')
       .setOrigin(SKULL.x / 16, SKULL.y / 16)
       .setScale(UI));
@@ -40,7 +61,7 @@ export class Hud {
     return obj.setScrollFactor(0).setDepth(DEPTH);
   }
 
-  update(now, { hp, kills, secs, muted }) {
+  update(now, { hp, pips, kills, secs, muted }) {
     hp = Math.max(hp, 0);
     for (let i = hp; i < this.shownHp; i++) this.loseHeart(this.hearts[i]);
     this.shownHp = Math.min(this.shownHp, hp);
@@ -49,9 +70,42 @@ export class Hud {
     const last = this.hearts[0];
     if (hp === 1 && !last.popping) last.setScale(HEART_SCALE * (1 + 0.12 * Math.max(0, Math.sin(now / 110))));
 
+    this.updateCharges(pips);
     this.kills.setText(String(kills));
     this.timer.setText(`${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`);
     this.muted.setVisible(muted);
+  }
+
+  updateCharges(pips) {
+    this.charges.forEach((slot, i) => {
+      const frac = Phaser.Math.Clamp((pips - i * R.pipsPerCharge) / R.pipsPerCharge, 0, 1);
+      const { width, height } = slot.fill.frame;
+      slot.fill.setCrop(0, 0, Math.round(width * frac), height).setAlpha(frac < 1 ? 0.45 : 1);
+      const full = frac === 1;
+      if (full && !slot.full) {
+        slot.fill.setScale(CHARGE_SCALE * 1.5);
+        this.scene.tweens.add({ targets: slot.fill, scale: CHARGE_SCALE, duration: 220, ease: 'Back.easeOut' });
+      }
+      slot.full = full;
+    });
+  }
+
+  // Rattle the charge slots when you try to shoot with none.
+  shakeCharges() {
+    for (const slot of this.charges) {
+      const targets = [slot.empty, slot.fill];
+      this.scene.tweens.killTweensOf(targets);
+      for (const t of targets) t.setX(slot.x).setScale(CHARGE_SCALE); // also ends a fill pop cut short
+      slot.empty.setTintFill(BLOOD[3]);
+      this.scene.tweens.add({
+        targets,
+        x: slot.x + 4,
+        duration: 35,
+        yoyo: true,
+        repeat: 2,
+        onComplete: () => slot.empty.setTintFill(CHARGE_EMPTY),
+      });
+    }
   }
 
   loseHeart(heart) {

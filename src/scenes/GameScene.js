@@ -8,6 +8,7 @@ import { ART_SCALE } from '../art.js';
 import { Hud } from '../ui/Hud.js';
 import { Fx } from '../fx.js';
 import { sfx } from '../audio/sfx.js';
+import { BOLT_TINT } from '../textures.js';
 
 const M = TUNING.melee;
 const D = TUNING.dash;
@@ -96,7 +97,7 @@ export class GameScene extends Phaser.Scene {
     this.tryDash(now, moveDir);
     this.player.move(moveDir, dt, now);
     this.tryAttack(now);
-    this.tryShoot(now, pointer);
+    this.tryShoot(now);
     this.updateProjectiles(this.bolts);
     this.updateProjectiles(this.enemyBullets);
     this.updateDashFx(now);
@@ -219,30 +220,48 @@ export class GameScene extends Phaser.Scene {
       this.hitstop(swing.hitstopMs + (kills > 0 ? M.killHitstopBonusMs : 0));
       this.fx.shake(swing.shake);
     }
+    this.gainPips(hits * R.hitPips);
   }
 
-  // Right click fires; holding it auto-fires at the cooldown rate.
-  tryShoot(now, pointer) {
+  gainPips(pips) {
     const p = this.player;
-    if (p.isDashing || now < p.nextShotAt) return;
-    if (!pointer.rightButtonDown() && now - this.shootQueuedAt > R.bufferMs) return;
+    const before = Math.floor(p.pips / R.pipsPerCharge);
+    p.pips = Math.min(p.pips + pips, R.maxCharges * R.pipsPerCharge);
+    if (Math.floor(p.pips / R.pipsPerCharge) > before) {
+      this.fx.readyRing(p, TUNING.player.radius, BOLT_TINT);
+      sfx.shotReady();
+    }
+  }
+
+  // Right click fires one charged bolt, exactly where you aim. No charge, no shot.
+  tryShoot(now) {
+    const p = this.player;
+    if (p.isDashing || now < p.nextShotAt || now - this.shootQueuedAt > R.bufferMs) return;
     this.shootQueuedAt = -Infinity;
+    if (p.pips < R.pipsPerCharge) {
+      sfx.shotEmpty();
+      this.hud.shakeCharges();
+      return;
+    }
+    p.pips -= R.pipsPerCharge;
     p.nextShotAt = now + R.cooldownMs;
 
-    const angle = p.aimAngle + Phaser.Math.DegToRad(Phaser.Math.FloatBetween(-R.spreadDeg, R.spreadDeg));
-    const muzzle = TUNING.player.radius + 8;
+    const angle = p.aimAngle;
+    const muzzle = TUNING.player.radius + 12;
     const x = p.x + Math.cos(angle) * muzzle;
     const y = p.y + Math.sin(angle) * muzzle;
 
     // Configure after create(): the group resets body settings when it adopts a child.
     const bolt = this.bolts.create(x, y, 'bolt').setScale(ART_SCALE);
-    bolt.body.setSize(4, 4); // art pixels: 8x8 on screen
-    bolt.trailTint = 0xffd34d;
+    bolt.body.setCircle(4.5, 2.5, 0); // art pixels: radius 9 on screen, centered (the body doesn't rotate)
+    bolt.trailTint = BOLT_TINT;
+    bolt.trailCount = 3;
     bolt.setVelocity(Math.cos(angle) * R.speed, Math.sin(angle) * R.speed);
     bolt.setRotation(angle).setDepth(12).setBlendMode(Phaser.BlendModes.ADD);
     bolt.startX = x;
     bolt.startY = y;
     bolt.maxRange = R.range;
+    bolt.pierced = new Set();
 
     p.body.velocity.add(new Phaser.Math.Vector2().setToPolar(angle, -R.recoil));
     sfx.shoot();
@@ -257,7 +276,7 @@ export class GameScene extends Phaser.Scene {
       const travelled = Phaser.Math.Distance.Between(shot.startX, shot.startY, shot.x, shot.y);
       const outside = shot.x < 0 || shot.y < 0 || shot.x > W || shot.y > H;
       if (travelled < shot.maxRange && !outside) {
-        this.fx.projectileTrail(shot.x, shot.y, shot.trailTint);
+        this.fx.projectileTrail(shot.x, shot.y, shot.trailTint, shot.trailCount);
         continue;
       }
       this.fx.hitSparks(shot.x, shot.y);
@@ -286,19 +305,23 @@ export class GameScene extends Phaser.Scene {
     this.damagePlayer(bullet.damage, dir, bullet.knockback);
   }
 
+  // Bolts pierce: each enemy is hit once, and every one already passed through adds damage.
   onBoltHit(bolt, enemy) {
-    if (!bolt.active || enemy.dying) return;
+    if (!bolt.active || enemy.dying || bolt.pierced.has(enemy)) return;
     const now = this.time.now;
+    const damage = R.damage + R.pierceBonus * bolt.pierced.size;
+    bolt.pierced.add(enemy);
     const dir = bolt.body.velocity.clone().normalize();
-    bolt.destroy();
     this.fx.hitSparks(enemy.x - dir.x * enemy.radius, enemy.y - dir.y * enemy.radius);
-    if (enemy.takeHit({ damage: R.damage, dir, knockback: R.knockback, stunMs: R.stunMs }, now)) {
+    this.fx.shake(R.hitShake);
+    if (enemy.takeHit({ damage, dir, knockback: R.knockback, stunMs: R.stunMs, heavy: true }, now)) {
       this.killEnemy(enemy);
       this.hitstop(R.killHitstopMs);
     } else {
       sfx.boltHit(enemy.x, enemy.y);
-      this.fx.flash(enemy, 50);
-      this.fx.squash(enemy, 0.2, 70);
+      this.fx.flash(enemy);
+      this.fx.squash(enemy, 0.4);
+      this.hitstop(R.hitstopMs);
     }
   }
 
@@ -436,6 +459,7 @@ export class GameScene extends Phaser.Scene {
   updateHud(now) {
     this.hud.update(now, {
       hp: this.player.hp,
+      pips: this.player.pips,
       kills: this.kills,
       secs: Math.floor((now - this.startedAt) / 1000),
       muted: sfx.muted,

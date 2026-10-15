@@ -32,18 +32,26 @@ export const TUNING = {
     ghostIntervalMs: 18,  // afterimage spacing
   },
 
+  // A heavy bolt that costs a charge. Charges are earned with the sword, one pip at a time, and
+  // don't decay. Bolts pierce, hitting each enemy once.
   ranged: {
-    cooldownMs: 240,      // also the auto-fire rate while right button is held
+    pipsPerCharge: 3,     // a shot costs this many pips
+    maxCharges: 2,        // shots that can be stored
+    startCharges: 1,
+    hitPips: 1,           // per enemy hit by a swing, finisher included
+    cooldownMs: 300,
     bufferMs: 120,
-    speed: 760,
-    range: 520,           // bolt fizzles after travelling this far
-    spreadDeg: 3,         // random +/- deviation per shot
-    damage: 1,
-    knockback: 140,
-    stunMs: 110,          // shorter than melee so bolts can't stunlock a crowd
-    recoil: 70,           // pushes the player backward a little per shot
-    killHitstopMs: 30,
-    shake: { duration: 40, intensity: 0.0015 },
+    speed: 580,
+    range: 700,           // bolt fizzles after travelling this far
+    damage: 3,
+    pierceBonus: 1,       // extra damage for each enemy the bolt already went through
+    knockback: 520,
+    stunMs: 400,          // also staggers a brute, like a finisher
+    recoil: 220,          // pushes the player backward per shot
+    hitstopMs: 50,
+    killHitstopMs: 70,
+    shake: { duration: 90, intensity: 0.006 },
+    hitShake: { duration: 80, intensity: 0.005 },
   },
 
   melee: {

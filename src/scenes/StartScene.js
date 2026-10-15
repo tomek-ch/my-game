@@ -10,7 +10,7 @@ const CONTROLS = [
   ['WSAD', 'Move'],
   ['Space', 'Dash'],
   ['Left click', 'Melee'],
-  ['Right click', 'Projectile'],
+  ['Right click', 'Shot - sword hits charge it'],
 ];
 
 // The title screen: the controls over a dimmed dungeon. Any click or key starts the run.

@@ -38,6 +38,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.stunUntil = 0;
     this.nextAttackAt = 0;
     this.nextShotAt = 0;
+    this.pips = TUNING.ranged.startCharges * TUNING.ranged.pipsPerCharge; // shot charge, see TUNING.ranged
     this.comboIndex = 0;
     this.comboExpiresAt = 0;
     this.stepLeft = 0; // seconds of attack step remaining, only counts down while unfrozen
