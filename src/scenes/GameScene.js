@@ -5,6 +5,7 @@ import { ENEMY_TYPES } from '../entities/enemies/index.js';
 import { Spawner } from '../systems/Spawner.js';
 import { addDungeon } from '../world/dungeon.js';
 import { ART_SCALE } from '../art.js';
+import { Hud } from '../ui/Hud.js';
 import { Fx } from '../fx.js';
 import { sfx } from '../audio/sfx.js';
 
@@ -76,9 +77,7 @@ export class GameScene extends Phaser.Scene {
     this.events.on('postupdate', this.syncVisuals, this);
     this.events.once('shutdown', () => this.events.off('postupdate', this.syncVisuals, this));
 
-    this.hud = this.add.text(16, 12, '', { fontFamily: 'monospace', fontSize: '20px', color: '#e8e8f0' })
-      .setScrollFactor(0)
-      .setDepth(100);
+    this.hud = new Hud(this, TUNING.player.maxHp);
   }
 
   update(_time, delta) {
@@ -416,13 +415,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   updateHud(now) {
-    const max = TUNING.player.maxHp;
-    const hp = Math.max(this.player.hp, 0);
-    const secs = Math.floor((now - this.startedAt) / 1000);
-    const time = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
-    const muted = sfx.muted ? '   [M] muted' : '';
-    this.hud.setText(`HP ${'●'.repeat(hp)}${'○'.repeat(max - hp)}   Kills ${this.kills}   ${time}${muted}`);
+    this.hud.update(now, {
+      hp: this.player.hp,
+      kills: this.kills,
+      secs: Math.floor((now - this.startedAt) / 1000),
+      muted: sfx.muted,
+    });
   }
+
 
   gameOver() {
     this.isOver = true;
@@ -433,13 +433,7 @@ export class GameScene extends Phaser.Scene {
     this.player.showDead();
     this.fx.bloodBurst(this.player.x, this.player.y, this.player.y + TUNING.player.radius);
 
-    const { width, height } = this.cameras.main;
-    this.add.text(width / 2, height / 2, `YOU DIED\n\n${this.kills} kills\n\nclick or press R to restart`, {
-      fontFamily: 'monospace',
-      fontSize: '28px',
-      color: '#ffffff',
-      align: 'center',
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(100);
+    this.hud.showGameOver({ kills: this.kills, secs: Math.floor((this.overAt - this.startedAt) / 1000) });
   }
 
   tryRestart() {
