@@ -9,7 +9,7 @@ import { Hud } from '../ui/Hud.js';
 import { Fx } from '../fx.js';
 import { sfx } from '../audio/sfx.js';
 import { BOLT_TINT } from '../textures.js';
-import { MouseKeyboardControls, PadOrKeysControls } from '../input/controls.js';
+import { createControls } from '../input/controls.js';
 
 const M = TUNING.melee;
 const D = TUNING.dash;
@@ -23,9 +23,10 @@ export class GameScene extends Phaser.Scene {
     super('game');
   }
 
-  // data.players: how many local players (1 or 2). Player 2 uses a gamepad or the arrow keys.
+  // data.devices: one input device per local player, 'kbm' or a gamepad index (see controls.js).
   init(data) {
-    this.playerCount = Phaser.Math.Clamp(data?.players ?? 1, 1, MAX_PLAYERS);
+    this.devices = (data?.devices ?? ['kbm']).slice(0, MAX_PLAYERS);
+    this.playerCount = this.devices.length;
   }
 
   create() {
@@ -37,7 +38,7 @@ export class GameScene extends Phaser.Scene {
     const coop = this.playerCount > 1;
     this.players = [];
     for (let i = 0; i < this.playerCount; i++) {
-      const controls = i === 0 ? new MouseKeyboardControls(this, { arrows: !coop }) : new PadOrKeysControls(this, i - 1);
+      const controls = createControls(this, this.devices[i]);
       const x = W / 2 + (i - (this.playerCount - 1) / 2) * 60;
       this.players.push(new Player(this, x, H / 2, { hero: HEROES[i], controls }));
     }
@@ -69,7 +70,7 @@ export class GameScene extends Phaser.Scene {
 
     this.input.on('pointerdown', () => this.isOver && this.tryRestart());
     this.input.keyboard.on('keydown-R', () => this.isOver && this.tryRestart());
-    this.input.gamepad?.on('down', () => this.isOver && this.tryRestart());
+    this.input.gamepad.on('down', () => this.isOver && this.tryRestart());
 
     this.hitstopUntil = 0;
     this.kills = 0;
@@ -501,7 +502,7 @@ export class GameScene extends Phaser.Scene {
   updateCameraLookahead() {
     const C = TUNING.camera;
     const cam = this.cameras.main;
-    const pointer = this.players.length === 1 ? this.players[0].controls.pointer : null;
+    const pointer = this.players.length === 1 ? this.players[0].controls.pointer ?? null : null;
     const tx = pointer ? -(pointer.x - cam.width / 2) * C.aimLookahead : 0;
     const ty = pointer ? -(pointer.y - cam.height / 2) * C.aimLookahead : 0;
     this.lookahead.x += (tx - this.lookahead.x) * C.lookaheadLerp;
@@ -530,6 +531,6 @@ export class GameScene extends Phaser.Scene {
   }
 
   tryRestart() {
-    if (this.time.now - this.overAt > 500) this.scene.restart({ players: this.playerCount });
+    if (this.time.now - this.overAt > 500) this.scene.restart({ devices: this.devices });
   }
 }

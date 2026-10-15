@@ -2,10 +2,14 @@ import Phaser from 'phaser';
 
 const STICK_DEADZONE = 0.25;
 const AIM_DEADZONE = 0.4;
-const PAD = { dash: 0, melee: 2, shoot: [5, 7] }; // A, X, RB/RT (standard mapping)
+// Standard mapping: A, B, Y, LB, RB, RT. Everything you do while aiming is on the right shoulder, so
+// the right thumb never leaves the stick: melee RB, shot LB, dash RT (or A).
+export const PAD = { dash: [0, 7], back: 1, coop: 3, melee: 5, shoot: 4, triggers: [6, 7] };
+const TRIGGER_THRESHOLD = 0.5; // Phaser counts a press only at 1.0, a full pull that some triggers never reach
 
 // What one player wants to do this frame. The game only reads this, never a device, so a player can
 // be driven by the mouse and keyboard, a gamepad, or (later) a remote peer.
+// A device is named 'kbm' (keyboard and mouse) or by a gamepad's index.
 export class Controls {
   constructor() {
     this.move = new Phaser.Math.Vector2(); // normalized, or zero
@@ -20,13 +24,13 @@ export class Controls {
   update(_player) {}
 }
 
-// WASD (and the arrows, unless someone else is using them) to move, the mouse to aim and attack.
+// WASD or the arrows to move, the mouse to aim and attack.
 export class MouseKeyboardControls extends Controls {
-  constructor(scene, { arrows = true } = {}) {
+  constructor(scene) {
     super();
     this.scene = scene;
     this.keys = scene.input.keyboard.addKeys('W,A,S,D');
-    this.cursors = arrows ? scene.input.keyboard.createCursorKeys() : null;
+    this.cursors = scene.input.keyboard.createCursorKeys();
     scene.input.mouse.disableContextMenu();
     scene.input.on('pointerdown', (pointer) => {
       if (pointer.button === 2) this.shootQueuedAt = scene.time.now;
@@ -46,7 +50,7 @@ export class MouseKeyboardControls extends Controls {
   update(player) {
     const k = this.keys;
     const c = this.cursors;
-    const held = (key, arrow) => key.isDown || (c?.[arrow].isDown ?? false);
+    const held = (key, arrow) => key.isDown || c[arrow].isDown;
     this.move.set(
       (held(k.D, 'right') ? 1 : 0) - (held(k.A, 'left') ? 1 : 0),
       (held(k.S, 'down') ? 1 : 0) - (held(k.W, 'up') ? 1 : 0),
@@ -57,49 +61,42 @@ export class MouseKeyboardControls extends Controls {
   }
 }
 
-// A gamepad when one is connected, otherwise the right side of the keyboard: arrows to move,
-// , melee, . fire, / dash. Without a right stick, you aim where you last moved.
-export class PadOrKeysControls extends Controls {
+// One gamepad: left stick to move, right stick to aim (or where you last moved), RT or A dash,
+// RB melee, LB fire.
+export class GamepadControls extends Controls {
   constructor(scene, padIndex) {
     super();
     this.scene = scene;
     this.padIndex = padIndex;
-    this.cursors = scene.input.keyboard.createCursorKeys();
-    this.keys = scene.input.keyboard.addKeys({ melee: 'COMMA', shoot: 'PERIOD', dash: 'FORWARD_SLASH' });
-    this.keys.melee.on('down', () => (this.attackQueuedAt = scene.time.now));
-    this.keys.shoot.on('down', () => (this.shootQueuedAt = scene.time.now));
-    this.keys.dash.on('down', () => (this.dashQueuedAt = scene.time.now));
-
-    scene.input.gamepad?.on('down', (pad, button) => {
+    scene.input.gamepad.on('down', (pad, button) => {
       if (pad.index !== this.padIndex) return;
       const now = scene.time.now;
-      if (button.index === PAD.dash) this.dashQueuedAt = now;
+      if (PAD.dash.includes(button.index)) this.dashQueuedAt = now;
       else if (button.index === PAD.melee) this.attackQueuedAt = now;
-      else if (PAD.shoot.includes(button.index)) this.shootQueuedAt = now;
+      else if (button.index === PAD.shoot) this.shootQueuedAt = now;
     });
   }
 
   get pad() {
-    const pad = this.scene.input.gamepad?.getPad(this.padIndex);
+    const pad = this.scene.input.gamepad.getPad(this.padIndex);
     return pad?.connected ? pad : null;
   }
 
   update() {
-    const c = this.cursors;
     const pad = this.pad;
+    // Pads are created per scene with the default threshold; this is the first chance to set it.
+    for (const i of PAD.triggers) if (pad?.buttons[i]) pad.buttons[i].threshold = TRIGGER_THRESHOLD;
     const stick = pad?.leftStick;
-    if (stick && stick.length() > STICK_DEADZONE) {
-      this.move.copy(stick).limit(1);
-    } else {
-      this.move.set(
-        (c.right.isDown ? 1 : 0) - (c.left.isDown ? 1 : 0),
-        (c.down.isDown ? 1 : 0) - (c.up.isDown ? 1 : 0),
-      ).normalize();
-    }
+    if (stick && stick.length() > STICK_DEADZONE) this.move.copy(stick).limit(1);
+    else this.move.set(0, 0);
 
     const aim = pad?.rightStick;
     if (aim && aim.length() > AIM_DEADZONE) this.aimAngle = aim.angle();
     else if (this.move.lengthSq() > 0) this.aimAngle = this.move.angle();
     else this.aimAngle = null;
   }
+}
+
+export function createControls(scene, device) {
+  return device === 'kbm' ? new MouseKeyboardControls(scene) : new GamepadControls(scene, device);
 }
