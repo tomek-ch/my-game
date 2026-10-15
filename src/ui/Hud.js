@@ -10,21 +10,35 @@ const HEART_H = 12;
 const HEART_GAP = 2;
 const SKULL = { x: 5, y: 7, size: 6 }; // the visible skull inside its 16x16 frame
 const GLYPH_H = 7;     // pixel font letter height
+const ROW_GAP = 8;     // between players' heart rows
+const LABEL_W = 24;    // room for the P1/P2 label in co-op
+const LABEL_COLORS = [0xf2c14e, 0x5ce1ff];
 
-// Hearts (one per HP), a skull with the kill count, the run timer, and the game-over screen.
+// Hearts (one row per player, one heart per HP), a skull with the kill count, the run timer, and the
+// game-over screen.
 export class Hud {
-  constructor(scene, maxHp) {
+  constructor(scene, maxHp, playerCount = 1) {
     this.scene = scene;
-    this.shownHp = maxHp;
-    this.hearts = [];
-    for (let i = 0; i < maxHp; i++) {
-      const x = MARGIN + (i * (HEART_W + HEART_GAP) + HEART_W / 2) * HEART_SCALE;
-      const heart = scene.add.image(x, MARGIN + HEART_H / 2 * HEART_SCALE, 'dungeon', 'ui_heart_full');
-      this.hearts.push(this.fixed(heart.setScale(HEART_SCALE)));
+    const labelled = playerCount > 1;
+    const rowH = HEART_H * HEART_SCALE + ROW_GAP;
+    this.rows = [];
+    for (let p = 0; p < playerCount; p++) {
+      const y = MARGIN + p * rowH + HEART_H / 2 * HEART_SCALE;
+      if (labelled) {
+        this.fixed(pixelText(scene, MARGIN, y, `P${p + 1}`, 2).setOrigin(0, 0.5).setTint(LABEL_COLORS[p % LABEL_COLORS.length]));
+      }
+      const left = MARGIN + (labelled ? LABEL_W : 0);
+      const hearts = [];
+      for (let i = 0; i < maxHp; i++) {
+        const x = left + (i * (HEART_W + HEART_GAP) + HEART_W / 2) * HEART_SCALE;
+        const heart = scene.add.image(x, y, 'dungeon', 'ui_heart_full');
+        hearts.push(this.fixed(heart.setScale(HEART_SCALE)));
+      }
+      this.rows.push({ hearts, shownHp: maxHp });
     }
 
     // Skull placed by its visible pixels, with the count centered on it.
-    const rowTop = MARGIN + HEART_H * HEART_SCALE + 12;
+    const rowTop = MARGIN + playerCount * rowH - ROW_GAP + 12;
     this.fixed(scene.add.image(MARGIN, rowTop, 'dungeon', 'skull')
       .setOrigin(SKULL.x / 16, SKULL.y / 16)
       .setScale(UI));
@@ -40,18 +54,22 @@ export class Hud {
     return obj.setScrollFactor(0).setDepth(DEPTH);
   }
 
-  update(now, { hp, kills, secs, muted }) {
-    hp = Math.max(hp, 0);
-    for (let i = hp; i < this.shownHp; i++) this.loseHeart(this.hearts[i]);
-    this.shownHp = Math.min(this.shownHp, hp);
-
-    // The last heart beats.
-    const last = this.hearts[0];
-    if (hp === 1 && !last.popping) last.setScale(HEART_SCALE * (1 + 0.12 * Math.max(0, Math.sin(now / 110))));
+  // hps: each player's HP, in HUD row order.
+  update(now, { hps, kills, secs, muted }) {
+    hps.forEach((hp, p) => this.updateHearts(this.rows[p], Math.max(hp, 0), now));
 
     this.kills.setText(String(kills));
     this.timer.setText(`${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`);
     this.muted.setVisible(muted);
+  }
+
+  updateHearts(row, hp, now) {
+    for (let i = hp; i < row.shownHp; i++) this.loseHeart(row.hearts[i]);
+    row.shownHp = Math.min(row.shownHp, hp);
+
+    // The last heart beats.
+    const last = row.hearts[0];
+    if (hp === 1 && !last.popping) last.setScale(HEART_SCALE * (1 + 0.12 * Math.max(0, Math.sin(now / 110))));
   }
 
   loseHeart(heart) {

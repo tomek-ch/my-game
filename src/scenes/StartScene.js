@@ -13,7 +13,8 @@ const CONTROLS = [
   ['Right click', 'Projectile'],
 ];
 
-// The title screen: the controls over a dimmed dungeon. Any click or key starts the run.
+// The title screen: the controls over a dimmed dungeon. Any click or key starts a solo run; 2 starts
+// local co-op, with player 2 on a gamepad or the arrow keys.
 export class StartScene extends Phaser.Scene {
   constructor() {
     super('start');
@@ -28,7 +29,7 @@ export class StartScene extends Phaser.Scene {
 
     const cx = width / 2;
     this.add.sprite(cx, 150, 'dungeon', 'knight_m_idle_anim_f0')
-      .setScale(5).setScrollFactor(0).play('knight_idle');
+      .setScale(5).setScrollFactor(0).play('knight_m_idle');
 
     pixelText(this, cx, 260, 'Controls', 5).setOrigin(0.5).setTint(BLOOD[3]);
 
@@ -41,14 +42,16 @@ export class StartScene extends Phaser.Scene {
 
     const hint = pixelText(this, cx, height - 110, 'Click or press any key to start', 2).setOrigin(0.5);
     this.tweens.add({ targets: hint, alpha: 0.3, duration: 600, yoyo: true, repeat: -1 });
+    pixelText(this, cx, height - 80, 'Press 2 for co-op: P2 uses a gamepad or arrows , . /', 2)
+      .setOrigin(0.5).setAlpha(0.6);
 
     this.input.mouse.disableContextMenu();
     let started = false; // a click and a key press can land in the same frame
-    const start = () => {
-      if (!started) this.scene.start('game');
+    const start = (players) => {
+      if (!started) this.scene.start('game', { players });
       started = true;
     };
-    this.input.once('pointerdown', start);
-    this.input.keyboard.once('keydown', start);
+    this.input.once('pointerdown', () => start(1));
+    this.input.keyboard.once('keydown', (e) => start(e.key === '2' ? 2 : 1));
   }
 }

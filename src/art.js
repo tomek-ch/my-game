@@ -26,8 +26,10 @@ export function registerArt(scene) {
     if (rect.length === 4) texture.add(name, 0, ...rect.map(Number));
   }
 
-  loopAnim(scene, 'knight_idle', 'knight_m_idle_anim_f', 4, 6);
-  loopAnim(scene, 'knight_run', 'knight_m_run_anim_f', 4, 12);
+  for (const hero of ['knight_m', 'knight_f']) {
+    loopAnim(scene, `${hero}_idle`, `${hero}_idle_anim_f`, 4, 6);
+    loopAnim(scene, `${hero}_run`, `${hero}_run_anim_f`, 4, 12);
+  }
 
   // <monster>_idle and <monster>_run; monsters with a single loop use it for both.
   for (const { monster } of Object.values(ENEMY_ART)) {

@@ -19,20 +19,24 @@ const SWORD_SWING_MS = { normal: 70, finisher: 95 };
 const SWORD_SETTLE = 18;        // how fast it eases back to rest (per second, exponential)
 
 export class Player extends Phaser.Physics.Arcade.Sprite {
-  constructor(scene, x, y) {
-    super(scene, x, y, 'dungeon', 'knight_m_idle_anim_f0');
+  // hero: which character art to use, 'knight_m' or 'knight_f'. controls: what drives this player.
+  constructor(scene, x, y, { hero = 'knight_m', controls }) {
+    super(scene, x, y, 'dungeon', `${hero}_idle_anim_f0`);
+    this.hero = hero;
+    this.controls = controls;
     scene.add.existing(this);
     scene.physics.add.existing(this);
     this.baseScale = ART_SCALE;
     const r = T.radius / ART_SCALE;
     this.setScale(ART_SCALE).setOrigin(BODY_CENTER.x / this.width, BODY_CENTER.y / this.height);
     this.body.setCircle(r, BODY_CENTER.x - r, BODY_CENTER.y - r);
-    this.play('knight_idle');
+    this.play(`${hero}_idle`);
     this.shadow = new Shadow(this, 12, T.radius);
     this.setCollideWorldBounds(true);
     this.setDepth(ySortDepth(y));
 
     this.hp = T.maxHp;
+    this.dead = false;
     this.aimAngle = 0;
     this.invulnUntil = 0;
     this.stunUntil = 0;
@@ -46,6 +50,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.dashVel = new Phaser.Math.Vector2();
     this.nextDashAt = 0;
     this.dashInvulnUntil = 0;
+    this.nextGhostAt = 0;
+    this.dashWasReady = true;
 
     this.sword = scene.add.image(x, y, 'dungeon', 'weapon_knight_sword').setScale(ART_SCALE).setOrigin(0.5, 0.8);
     this.swordSide = -1;    // which side of the aim it rests on: -1 or 1
@@ -84,8 +90,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     else vel.add(diff.setLength(step));
   }
 
-  aimAt(worldX, worldY) {
-    this.aimAngle = Math.atan2(worldY - this.y, worldX - this.x);
+  get alive() {
+    return !this.dead;
   }
 
   // Move `distance` px along `angle` over `ms`, ignoring input.
@@ -152,15 +158,15 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   syncAnimation(now) {
     if (now < this.stunUntil) {
       this.anims.stop();
-      this.setFrame('knight_m_hit_anim_f0');
+      this.setFrame(`${this.hero}_hit_anim_f0`);
       return;
     }
     const speed = this.body.velocity.length();
     if (speed < RUN_MIN_SPEED) {
-      this.play('knight_idle', true);
+      this.play(`${this.hero}_idle`, true);
       this.anims.timeScale = 1;
     } else {
-      this.play('knight_run', true);
+      this.play(`${this.hero}_run`, true);
       this.anims.timeScale = Phaser.Math.Clamp(speed / T.maxSpeed, 0.6, 1.6);
     }
   }
@@ -188,10 +194,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.sword.setDepth(this.depth + (Math.sin(this.swordAngle) < -0.2 ? -0.0001 : 0.0001));
   }
 
-  // Grey out and freeze on death.
-  showDead() {
+  // Grey out and freeze on death. The body goes too, so nothing hits or targets the corpse.
+  die() {
+    this.dead = true;
+    this.body.stop();
+    this.body.enable = false;
     this.anims.stop();
-    this.setFrame('knight_m_hit_anim_f0');
+    this.setFrame(`${this.hero}_hit_anim_f0`);
     this.setAlpha(1).setTint(0x555566);
     this.sword.setAlpha(1).setTint(0x555566);
   }

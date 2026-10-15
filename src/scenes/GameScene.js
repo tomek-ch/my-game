@@ -8,14 +8,23 @@ import { ART_SCALE } from '../art.js';
 import { Hud } from '../ui/Hud.js';
 import { Fx } from '../fx.js';
 import { sfx } from '../audio/sfx.js';
+import { MouseKeyboardControls, PadOrKeysControls } from '../input/controls.js';
 
 const M = TUNING.melee;
 const D = TUNING.dash;
 const R = TUNING.ranged;
+const HEROES = ['knight_m', 'knight_f'];
+const MAX_PLAYERS = 2;
+const LEASH_MARGIN = 40; // co-op players can't walk further apart than the screen, minus this
 
 export class GameScene extends Phaser.Scene {
   constructor() {
     super('game');
+  }
+
+  // data.players: how many local players (1 or 2). Player 2 uses a gamepad or the arrow keys.
+  init(data) {
+    this.playerCount = Phaser.Math.Clamp(data?.players ?? 1, 1, MAX_PLAYERS);
   }
 
   create() {
@@ -24,48 +33,42 @@ export class GameScene extends Phaser.Scene {
     this.physics.world.setBounds(0, 0, W, H);
     const art = addDungeon(this, W, H);
 
-    this.player = new Player(this, W / 2, H / 2);
+    const coop = this.playerCount > 1;
+    this.players = [];
+    for (let i = 0; i < this.playerCount; i++) {
+      const controls = i === 0 ? new MouseKeyboardControls(this, { arrows: !coop }) : new PadOrKeysControls(this, i - 1);
+      const x = W / 2 + (i - (this.playerCount - 1) / 2) * 60;
+      this.players.push(new Player(this, x, H / 2, { hero: HEROES[i], controls }));
+    }
     this.enemies = this.physics.add.group();
     // Enemy-vs-enemy contact skips Arcade: its circle separation zeroes both velocities (velocity *
     // bounce, bounce 0) on every touch, even in overlap-only mode, so packed enemies crawled.
-    // (The world is rebuilt on restart, so this listener needs no cleanup.)
+    // (The world is rebuilt on restart, so these listeners need no cleanup.)
     this.physics.world.on('worldstep', this.separateEnemies, this);
-    this.physics.add.overlap(this.player, this.enemies, (_p, enemy) => this.onPlayerTouched(enemy));
+    if (coop) this.physics.world.on('worldstep', this.leashPlayers, this);
+    this.physics.add.overlap(this.players, this.enemies, (player, enemy) => this.onPlayerTouched(player, enemy));
     this.bolts = this.physics.add.group();
     this.physics.add.overlap(this.bolts, this.enemies, (bolt, enemy) => this.onBoltHit(bolt, enemy));
     this.enemyBullets = this.physics.add.group();
-    this.physics.add.overlap(this.player, this.enemyBullets, (_p, bullet) => this.onEnemyBulletHit(bullet));
+    this.physics.add.overlap(this.players, this.enemyBullets, (player, bullet) => this.onEnemyBulletHit(player, bullet));
 
+    // The camera (and the ears) follow the middle of the living players.
+    this.focus = new Phaser.Math.Vector2();
+    this.updateFocus();
     const cam = this.cameras.main;
     cam.setBounds(art.x, art.y, art.width, art.height); // includes the north wall above the floor
-    cam.startFollow(this.player, true, TUNING.camera.followLerp, TUNING.camera.followLerp);
+    cam.startFollow(this.focus, true, TUNING.camera.followLerp, TUNING.camera.followLerp);
     this.lookahead = new Phaser.Math.Vector2();
 
     this.fx = new Fx(this);
     sfx.init(this.sound.context);
-    sfx.listener = this.player;
+    sfx.listener = this.focus;
     this.input.keyboard.on('keydown-M', () => sfx.toggleMute());
     this.spawner = new Spawner(this, (x, y, type) => this.spawnEnemy(x, y, type));
 
-    this.cursors = this.input.keyboard.createCursorKeys();
-    this.wasd = this.input.keyboard.addKeys('W,A,S,D');
-    this.input.mouse.disableContextMenu();
-    this.attackQueuedAt = -Infinity;
-    this.shootQueuedAt = -Infinity;
-    this.input.on('pointerdown', (pointer) => {
-      if (this.isOver) this.tryRestart();
-      else if (pointer.button === 2) this.shootQueuedAt = this.time.now;
-      else if (pointer.button === 0) this.attackQueuedAt = this.time.now;
-    });
+    this.input.on('pointerdown', () => this.isOver && this.tryRestart());
     this.input.keyboard.on('keydown-R', () => this.isOver && this.tryRestart());
-    this.dashQueuedAt = -Infinity;
-    const queueDash = (e) => {
-      if (!e.repeat) this.dashQueuedAt = this.time.now;
-    };
-    this.input.keyboard.on('keydown-SPACE', queueDash);
-    this.input.keyboard.on('keydown-SHIFT', queueDash);
-    this.nextGhostAt = 0;
-    this.dashWasReady = true;
+    this.input.gamepad?.on('down', () => this.isOver && this.tryRestart());
 
     this.hitstopUntil = 0;
     this.kills = 0;
@@ -77,7 +80,7 @@ export class GameScene extends Phaser.Scene {
     this.events.on('postupdate', this.syncVisuals, this);
     this.events.once('shutdown', () => this.events.off('postupdate', this.syncVisuals, this));
 
-    this.hud = new Hud(this, TUNING.player.maxHp);
+    this.hud = new Hud(this, TUNING.player.maxHp, this.playerCount);
   }
 
   update(_time, delta) {
@@ -89,70 +92,78 @@ export class GameScene extends Phaser.Scene {
     if (this.physics.world.isPaused) this.physics.world.resume();
 
     const dt = Math.min(delta, 50) / 1000;
-    const pointer = this.input.activePointer;
-    const aim = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
-    this.player.aimAt(aim.x, aim.y);
-    const moveDir = this.readMoveInput();
-    this.tryDash(now, moveDir);
-    this.player.move(moveDir, dt, now);
-    this.tryAttack(now);
-    this.tryShoot(now, pointer);
+    for (const p of this.livingPlayers()) {
+      const c = p.controls;
+      c.update(p);
+      if (c.aimAngle !== null) p.aimAngle = c.aimAngle;
+      this.tryDash(p, now);
+      p.move(c.move, dt, now);
+      this.tryAttack(p, now);
+      this.tryShoot(p, now);
+      this.updateDashFx(p, now);
+    }
     this.updateProjectiles(this.bolts);
     this.updateProjectiles(this.enemyBullets);
-    this.updateDashFx(now);
 
     for (const enemy of this.enemies.getChildren()) {
+      if (this.isOver) break; // the last player can fall to an enemy earlier in this loop
       if (enemy.dying) continue;
-      enemy.tick(this.player, dt, now);
+      enemy.tick(dt, now);
     }
 
-    this.updateCameraLookahead(pointer);
+    this.updateCameraLookahead();
     this.updateHud(now);
   }
 
-  readMoveInput() {
-    const c = this.cursors;
-    const k = this.wasd;
-    const dir = new Phaser.Math.Vector2(
-      (c.right.isDown || k.D.isDown ? 1 : 0) - (c.left.isDown || k.A.isDown ? 1 : 0),
-      (c.down.isDown || k.S.isDown ? 1 : 0) - (c.up.isDown || k.W.isDown ? 1 : 0),
-    );
-    return dir.normalize();
+  livingPlayers() {
+    return this.players.filter((p) => p.alive);
   }
 
-  // Dash where you're moving, or toward the mouse when standing still.
-  tryDash(now, moveDir) {
-    const p = this.player;
-    if (now - this.dashQueuedAt > D.bufferMs || !p.canDash(now)) return;
-    this.dashQueuedAt = -Infinity;
-    const angle = moveDir.lengthSq() > 0 ? moveDir.angle() : p.aimAngle;
+  nearestPlayer(x, y) {
+    let best = null;
+    let bestDist = Infinity;
+    for (const p of this.livingPlayers()) {
+      const dist = Phaser.Math.Distance.Squared(x, y, p.x, p.y);
+      if (dist < bestDist) {
+        best = p;
+        bestDist = dist;
+      }
+    }
+    return best;
+  }
+
+  // Dash where you're moving, or where you're aiming when standing still.
+  tryDash(p, now) {
+    const c = p.controls;
+    if (now - c.dashQueuedAt > D.bufferMs || !p.canDash(now)) return;
+    c.dashQueuedAt = -Infinity;
+    const angle = c.move.lengthSq() > 0 ? c.move.angle() : p.aimAngle;
     p.dash(angle, now);
     this.fx.dashStart(p, angle);
     sfx.dash();
-    this.dashWasReady = false;
+    p.dashWasReady = false;
   }
 
-  updateDashFx(now) {
-    const p = this.player;
-    if (p.isDashing && now >= this.nextGhostAt) {
+  updateDashFx(p, now) {
+    if (p.isDashing && now >= p.nextGhostAt) {
       this.fx.afterimage(p);
-      this.nextGhostAt = now + D.ghostIntervalMs;
+      p.nextGhostAt = now + D.ghostIntervalMs;
     }
     const ready = !p.isDashing && now >= p.nextDashAt;
-    if (ready && !this.dashWasReady) {
+    if (ready && !p.dashWasReady) {
       this.fx.readyRing(p, TUNING.player.radius);
       sfx.dashReady();
     }
-    this.dashWasReady = ready;
+    p.dashWasReady = ready;
   }
 
-  tryAttack(now) {
+  tryAttack(p, now) {
     // Clicks during a dash stay buffered and fire as it ends.
-    if (this.player.isDashing) return;
-    if (now - this.attackQueuedAt > M.bufferMs || now < this.player.nextAttackAt) return;
-    this.attackQueuedAt = -Infinity;
+    if (p.isDashing) return;
+    const c = p.controls;
+    if (now - c.attackQueuedAt > M.bufferMs || now < p.nextAttackAt) return;
+    c.attackQueuedAt = -Infinity;
 
-    const p = this.player;
     if (now > p.comboExpiresAt) p.comboIndex = 0;
     const swing = M.swings[p.comboIndex];
     const isFinisher = p.comboIndex === M.swings.length - 1;
@@ -161,7 +172,7 @@ export class GameScene extends Phaser.Scene {
     p.comboIndex = isFinisher ? 0 : p.comboIndex + 1;
 
     // Aim assist: step toward the nearest enemy roughly in front, and bend the swing toward it.
-    const target = this.findSwingTarget(swing);
+    const target = this.findSwingTarget(p, swing);
     let angle = p.aimAngle;
     let stepDist = swing.step;
     if (target) {
@@ -222,11 +233,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   // Right click fires; holding it auto-fires at the cooldown rate.
-  tryShoot(now, pointer) {
-    const p = this.player;
+  tryShoot(p, now) {
+    const c = p.controls;
     if (p.isDashing || now < p.nextShotAt) return;
-    if (!pointer.rightButtonDown() && now - this.shootQueuedAt > R.bufferMs) return;
-    this.shootQueuedAt = -Infinity;
+    if (!c.shootHeld && now - c.shootQueuedAt > R.bufferMs) return;
+    c.shootQueuedAt = -Infinity;
     p.nextShotAt = now + R.cooldownMs;
 
     const angle = p.aimAngle + Phaser.Math.DegToRad(Phaser.Math.FloatBetween(-R.spreadDeg, R.spreadDeg));
@@ -279,11 +290,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   // Bullets pass through you while you're invulnerable, so dashing through them works.
-  onEnemyBulletHit(bullet) {
-    if (!bullet.active || this.player.isInvulnerable(this.time.now)) return;
+  onEnemyBulletHit(player, bullet) {
+    if (!bullet.active || !player.alive || player.isInvulnerable(this.time.now)) return;
     const dir = bullet.body.velocity.clone().normalize();
     bullet.destroy();
-    this.damagePlayer(bullet.damage, dir, bullet.knockback);
+    this.damagePlayer(player, bullet.damage, dir, bullet.knockback);
   }
 
   onBoltHit(bolt, enemy) {
@@ -302,9 +313,8 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  // Nearest live enemy within reach (range + assist distance) and within assistDeg of the mouse.
-  findSwingTarget(swing) {
-    const p = this.player;
+  // Nearest live enemy within reach (range + assist distance) and within assistDeg of the aim.
+  findSwingTarget(p, swing) {
     const reach = swing.range + M.assistRange;
     const cone = Phaser.Math.DegToRad(M.assistDeg);
     let best = null;
@@ -327,7 +337,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   // An enemy's attack landing on the other enemies (the brute's swing and slam): everyone that
-  // `inArea(enemy)` accepts is knocked away from (x, y). Kills count as the player's.
+  // `inArea(enemy)` accepts is knocked away from (x, y). Kills count as the players'.
   hitEnemies(source, x, y, inArea, { damage, knockback, stunMs }) {
     const now = this.time.now;
     for (const enemy of [...this.enemies.getChildren()]) {
@@ -356,7 +366,42 @@ export class GameScene extends Phaser.Scene {
     for (const enemy of this.enemies.getChildren()) {
       if (!enemy.dying) enemy.syncVisuals();
     }
-    this.player.syncVisuals(this.time.now);
+    for (const p of this.livingPlayers()) p.syncVisuals(this.time.now);
+    this.updateFocus();
+  }
+
+  updateFocus() {
+    const living = this.livingPlayers();
+    if (living.length === 0) return;
+    this.focus.set(0, 0);
+    for (const p of living) this.focus.add(p);
+    this.focus.scale(1 / living.length);
+  }
+
+  // Keeps co-op players within one screen (minus a margin) of each other, so the camera can always
+  // show everyone. Each player is held against where the others were last step, so the edge is a
+  // wall for whoever walks into it and nobody gets dragged along.
+  leashPlayers() {
+    const living = this.livingPlayers();
+    if (living.length < 2) return;
+    const cam = this.cameras.main;
+    const spanX = cam.width - LEASH_MARGIN * 2;
+    const spanY = cam.height - LEASH_MARGIN * 2;
+    const before = new Map(living.map((p) => [p, p.leashedAt ?? p.body.center.clone()]));
+    for (const p of living) {
+      const b = p.body;
+      const others = living.filter((o) => o !== p).map((o) => before.get(o));
+      const xs = others.map((c) => c.x);
+      const ys = others.map((c) => c.y);
+      const dx = Phaser.Math.Clamp(b.center.x, Math.max(...xs) - spanX, Math.min(...xs) + spanX) - b.center.x;
+      const dy = Phaser.Math.Clamp(b.center.y, Math.max(...ys) - spanY, Math.min(...ys) + spanY) - b.center.y;
+      if (dx !== 0 || dy !== 0) {
+        b.x += dx;
+        b.y += dy;
+        b.updateCenter();
+      }
+      p.leashedAt = b.center.clone();
+    }
   }
 
   // Push overlapping enemies apart, the heavier one moving less. Velocity is left to the AI.
@@ -389,33 +434,40 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  onPlayerTouched(enemy) {
+  onPlayerTouched(player, enemy) {
     const contact = enemy.contact(this.time.now);
     if (!contact) return;
-    const dir = new Phaser.Math.Vector2(this.player.x - enemy.x, this.player.y - enemy.y).normalize();
-    if (this.damagePlayer(contact.damage, dir, contact.knockback)) {
+    const dir = new Phaser.Math.Vector2(player.x - enemy.x, player.y - enemy.y).normalize();
+    if (this.damagePlayer(player, contact.damage, dir, contact.knockback)) {
       enemy.knock(dir.clone().negate(), TUNING.player.hurtKnockback * 0.6, this.time.now);
     }
   }
 
   // Returns false if the player couldn't be hurt right now.
-  damagePlayer(damage, dir, knockback) {
+  damagePlayer(player, damage, dir, knockback) {
     const now = this.time.now;
-    if (this.isOver || this.player.isInvulnerable(now)) return false;
-    this.player.hurt(damage, dir, now, knockback);
+    if (this.isOver || !player.alive || player.isInvulnerable(now)) return false;
+    player.hurt(damage, dir, now, knockback);
 
     this.hitstop(TUNING.hurtFx.hitstopMs);
     this.fx.shake(TUNING.hurtFx.shake);
     this.cameras.main.flash(120, 120, 20, 40);
 
-    if (this.player.hp <= 0) {
+    if (player.hp <= 0) {
       sfx.death();
-      this.gameOver();
+      this.killPlayer(player);
     } else {
       sfx.hurt();
-      this.fx.flash(this.player, 90);
+      this.fx.flash(player, 90);
     }
     return true;
+  }
+
+  // The run ends when the last player falls.
+  killPlayer(player) {
+    player.die();
+    this.fx.bloodBurst(player.x, player.y, player.y + TUNING.player.radius);
+    if (this.livingPlayers().length === 0) this.gameOver();
   }
 
   hitstop(ms) {
@@ -423,11 +475,13 @@ export class GameScene extends Phaser.Scene {
     this.physics.world.pause();
   }
 
-  updateCameraLookahead(pointer) {
+  // Solo with the mouse, the camera leans toward where you aim. In co-op it stays on the middle.
+  updateCameraLookahead() {
     const C = TUNING.camera;
     const cam = this.cameras.main;
-    const tx = -(pointer.x - cam.width / 2) * C.aimLookahead;
-    const ty = -(pointer.y - cam.height / 2) * C.aimLookahead;
+    const pointer = this.players.length === 1 ? this.players[0].controls.pointer : null;
+    const tx = pointer ? -(pointer.x - cam.width / 2) * C.aimLookahead : 0;
+    const ty = pointer ? -(pointer.y - cam.height / 2) * C.aimLookahead : 0;
     this.lookahead.x += (tx - this.lookahead.x) * C.lookaheadLerp;
     this.lookahead.y += (ty - this.lookahead.y) * C.lookaheadLerp;
     cam.setFollowOffset(this.lookahead.x, this.lookahead.y);
@@ -435,7 +489,7 @@ export class GameScene extends Phaser.Scene {
 
   updateHud(now) {
     this.hud.update(now, {
-      hp: this.player.hp,
+      hps: this.players.map((p) => p.hp),
       kills: this.kills,
       secs: Math.floor((now - this.startedAt) / 1000),
       muted: sfx.muted,
@@ -449,13 +503,11 @@ export class GameScene extends Phaser.Scene {
     this.updateHud(this.time.now);
     this.spawner.stop();
     this.physics.world.pause();
-    this.player.showDead();
-    this.fx.bloodBurst(this.player.x, this.player.y, this.player.y + TUNING.player.radius);
 
     this.hud.showGameOver({ kills: this.kills, secs: Math.floor((this.overAt - this.startedAt) / 1000) });
   }
 
   tryRestart() {
-    if (this.time.now - this.overAt > 500) this.scene.restart();
+    if (this.time.now - this.overAt > 500) this.scene.restart({ players: this.playerCount });
   }
 }

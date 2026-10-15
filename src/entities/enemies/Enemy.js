@@ -4,7 +4,7 @@ import { ART_SCALE, ENEMY_ART } from '../../art.js';
 import { ySortDepth } from '../depth.js';
 import { Shadow } from '../Shadow.js';
 
-// Base enemy: walks at the player. Subclasses override think() and use enter()/stateT for simple
+// Base enemy: walks at its target, the nearest player. Subclasses override think() and use enter()/stateT for simple
 // state machines. stateT counts seconds of unfrozen time, so hitstop doesn't eat telegraphs.
 const RUN_MIN_SPEED = 20; // px/s; slower than this shows the idle loop
 
@@ -27,6 +27,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.spawnGraceUntil = scene.time.now + TUNING.spawn.graceMs;
     this.dying = false;
     this.mode = 'chase';
+    this.target = null; // the player it's after
     this.stateT = 0;
     this.facing = 0; // radians; logic reads this, never the sprite's rotation
     this.telegraphGfx = null;
@@ -55,14 +56,16 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     return now < this.stunUntil;
   }
 
-  tick(player, dt, now) {
+  tick(dt, now) {
     this.stateT += dt;
+    // Switch to whoever is nearest while chasing; an attack in progress stays on its target.
+    if (this.mode === 'chase' || !this.target?.alive) this.target = this.scene.nearestPlayer(this.x, this.y);
     if (this.isStunned(now)) {
       this.body.velocity.scale(Math.exp(-this.cfg.knockbackFriction * dt));
       if (this.mode !== 'chase') this.interrupt();
       return;
     }
-    this.think(player, dt, now);
+    this.think(this.target, dt, now);
   }
 
   // Called when a stun cuts off whatever the enemy was doing.

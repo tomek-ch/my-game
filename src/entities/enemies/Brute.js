@@ -10,7 +10,7 @@ const AIR_DEPTH = 11; // above every character while airborne, below projectiles
 const CROUCH_SQUASH = 0.18;
 
 // Up close: chase -> windup (red area fills up) -> swing -> recover -> chase.
-// Mid range: chase -> crouch (landing circle follows the player) -> air (circle locked) -> slam ->
+// Mid range: chase -> crouch (landing circle follows its target) -> air (circle locked) -> slam ->
 // landed (stuck, the opening to punish it) -> chase.
 // Light hits only chip it; a heavy hit (combo finisher) staggers it and cancels a swing or crouch.
 // The swing and slam also hit other enemies.
@@ -53,7 +53,7 @@ export class Brute extends Enemy {
       this.facing = this.aim;
       const progress = this.stateT * 1000 / a.windupMs;
       this.drawArea(Math.min(progress, 1));
-      if (progress >= 1) this.swing(player);
+      if (progress >= 1) this.swing();
     } else if (this.mode === 'recover') {
       if (this.stateT >= LUNGE_SECS) this.body.velocity.set(0, 0);
       if (this.stateT * 1000 >= a.recoveryMs) {
@@ -76,7 +76,7 @@ export class Brute extends Enemy {
       const left = Math.max(airSecs - this.stateT, dt);
       this.body.velocity.set((this.landing.x - this.x) / left, (this.landing.y - this.y) / left);
       this.drawLanding((j.crouchMs + this.stateT * 1000) / (j.crouchMs + j.airMs));
-      if (t >= 1) this.slam(player);
+      if (t >= 1) this.slam();
     } else if (this.mode === 'landed') {
       this.body.velocity.set(0, 0);
       if (this.stateT * 1000 >= j.recoverMs) {
@@ -137,7 +137,7 @@ export class Brute extends Enemy {
     return Math.abs(Phaser.Math.Angle.Wrap(Math.atan2(dy, dx) - this.aim)) <= Phaser.Math.DegToRad(a.arcDeg) / 2;
   }
 
-  swing(player) {
+  swing() {
     const a = this.cfg.attack;
     const scene = this.scene;
     this.windupSound = null;
@@ -150,9 +150,10 @@ export class Brute extends Enemy {
     this.body.velocity.setToPolar(this.aim, a.lunge / LUNGE_SECS);
 
     scene.hitEnemies(this, this.x, this.y, (e) => this.inSwing(e.x, e.y, e.radius), this.cfg.friendlyFire);
-    if (this.inSwing(player.x, player.y, TUNING.player.radius)) {
+    for (const player of scene.livingPlayers()) {
+      if (!this.inSwing(player.x, player.y, TUNING.player.radius)) continue;
       const dir = new Phaser.Math.Vector2(player.x - this.x, player.y - this.y).normalize();
-      scene.damagePlayer(a.damage, dir, a.knockback);
+      scene.damagePlayer(player, a.damage, dir, a.knockback);
     }
     this.enter('recover');
   }
@@ -166,7 +167,7 @@ export class Brute extends Enemy {
     this.enter('air');
   }
 
-  slam(player) {
+  slam() {
     const j = this.cfg.jump;
     const scene = this.scene;
     this.land();
@@ -178,10 +179,11 @@ export class Brute extends Enemy {
 
     const inSlam = (x, y, radius) => Phaser.Math.Distance.Between(this.x, this.y, x, y) <= j.radius + radius;
     scene.hitEnemies(this, this.x, this.y, (e) => inSlam(e.x, e.y, e.radius), this.cfg.friendlyFire);
-    if (inSlam(player.x, player.y, TUNING.player.radius)) {
+    for (const player of scene.livingPlayers()) {
+      if (!inSlam(player.x, player.y, TUNING.player.radius)) continue;
       const dir = new Phaser.Math.Vector2(player.x - this.x, player.y - this.y);
       if (dir.lengthSq() < 0.01) dir.setToPolar(this.facing);
-      scene.damagePlayer(j.damage, dir.normalize(), j.knockback);
+      scene.damagePlayer(player, j.damage, dir.normalize(), j.knockback);
     }
     this.enter('landed');
   }
