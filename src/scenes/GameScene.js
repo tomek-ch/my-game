@@ -1,9 +1,9 @@
 import Phaser from 'phaser';
 import { TUNING } from '../tuning.js';
-import { COLORS } from '../textures.js';
 import { Player } from '../entities/Player.js';
 import { ENEMY_TYPES } from '../entities/enemies/index.js';
 import { Spawner } from '../systems/Spawner.js';
+import { addDungeon } from '../world/dungeon.js';
 import { Fx } from '../fx.js';
 import { sfx } from '../audio/sfx.js';
 
@@ -20,8 +20,7 @@ export class GameScene extends Phaser.Scene {
     const { width: W, height: H } = TUNING.world;
 
     this.physics.world.setBounds(0, 0, W, H);
-    this.add.tileSprite(0, 0, W, H, 'grid').setOrigin(0);
-    this.add.graphics().lineStyle(4, COLORS.border).strokeRect(0, 0, W, H);
+    const art = addDungeon(this, W, H);
 
     this.player = new Player(this, W / 2, H / 2);
     this.enemies = this.physics.add.group();
@@ -36,7 +35,7 @@ export class GameScene extends Phaser.Scene {
     this.physics.add.overlap(this.player, this.enemyBullets, (_p, bullet) => this.onEnemyBulletHit(bullet));
 
     const cam = this.cameras.main;
-    cam.setBounds(0, 0, W, H);
+    cam.setBounds(art.x, art.y, art.width, art.height); // includes the north wall above the floor
     cam.startFollow(this.player, true, TUNING.camera.followLerp, TUNING.camera.followLerp);
     this.lookahead = new Phaser.Math.Vector2();
 

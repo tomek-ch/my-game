@@ -10,7 +10,7 @@ new Phaser.Game({
   parent: 'game',
   width: 1280,
   height: 720,
-  backgroundColor: '#101018',
+  backgroundColor: '#18141c', // the void around the dungeon
   pixelArt: true,
   roundPixels: true,
   scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },

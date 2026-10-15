@@ -1,9 +1,6 @@
 import { TUNING } from './tuning.js';
 
 export const COLORS = {
-  bg: 0x101018,
-  gridLine: 0x1d1d2b,
-  border: 0x3a3a55,
   player: 0x5ce1ff,
   playerOutline: 0xe8fbff,
   enemyBullet: 0xd78bff,
@@ -12,7 +9,7 @@ export const COLORS = {
 // Enemy textures have this much space around the body circle for spikes and barrels.
 export const ENEMY_PAD = 6;
 
-// Generates every texture from shapes, so there are no asset files yet.
+// Placeholder textures generated from shapes, used until each entity gets sprite-sheet art.
 export function createTextures(scene) {
   const g = scene.make.graphics({}, false);
 
@@ -53,11 +50,7 @@ export function createTextures(scene) {
   g.generateTexture('bolt', 16, 6).clear();
 
   g.fillStyle(0xffffff).fillCircle(4, 4, 4);
-  g.generateTexture('dot', 8, 8).clear();
-
-  g.fillStyle(COLORS.bg).fillRect(0, 0, 64, 64);
-  g.lineStyle(1, COLORS.gridLine).lineBetween(0, 0.5, 64, 0.5).lineBetween(0.5, 0, 0.5, 64);
-  g.generateTexture('grid', 64, 64);
+  g.generateTexture('dot', 8, 8);
 
   g.destroy();
 }

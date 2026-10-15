@@ -1,2 +1,4 @@
 node_modules
 dist
+# Unpacked asset downloads; only the files the game uses are copied into public/.
+assets/raw
