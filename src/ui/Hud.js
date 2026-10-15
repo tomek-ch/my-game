@@ -1,12 +1,15 @@
 import { BLOOD } from '../textures.js';
 import { pixelText } from './pixelFont.js';
 
-const UI = 3;          // screen pixels per art pixel for HUD art and text
+const UI = 3;          // screen pixels per art pixel for HUD text and icons
+const HEART_SCALE = 2; // hearts are drawn a bit smaller
 const MARGIN = 16;
 const DEPTH = 100;
 const HEART_W = 13;    // ui_heart_* frames are 13x12 art pixels
 const HEART_H = 12;
 const HEART_GAP = 2;
+const SKULL = { x: 5, y: 7, size: 6 }; // the visible skull inside its 16x16 frame
+const GLYPH_H = 7;     // pixel font letter height
 
 // Hearts (one per HP), a skull with the kill count, the run timer, and the game-over screen.
 export class Hud {
@@ -15,13 +18,18 @@ export class Hud {
     this.shownHp = maxHp;
     this.hearts = [];
     for (let i = 0; i < maxHp; i++) {
-      const x = MARGIN + (i * (HEART_W + HEART_GAP) + HEART_W / 2) * UI;
-      this.hearts.push(this.fixed(scene.add.image(x, MARGIN + HEART_H / 2 * UI, 'dungeon', 'ui_heart_full').setScale(UI)));
+      const x = MARGIN + (i * (HEART_W + HEART_GAP) + HEART_W / 2) * HEART_SCALE;
+      const heart = scene.add.image(x, MARGIN + HEART_H / 2 * HEART_SCALE, 'dungeon', 'ui_heart_full');
+      this.hearts.push(this.fixed(heart.setScale(HEART_SCALE)));
     }
 
-    const rowY = MARGIN + HEART_H * UI + 22;
-    this.fixed(scene.add.image(MARGIN + 6 * UI, rowY, 'dungeon', 'skull').setScale(UI));
-    this.kills = this.fixed(pixelText(scene, MARGIN + 14 * UI, rowY, '0', UI).setOrigin(0, 0.5));
+    // Skull placed by its visible pixels, with the count centered on it.
+    const rowTop = MARGIN + HEART_H * HEART_SCALE + 12;
+    this.fixed(scene.add.image(MARGIN, rowTop, 'dungeon', 'skull')
+      .setOrigin(SKULL.x / 16, SKULL.y / 16)
+      .setScale(UI));
+    const textTop = rowTop + (SKULL.size - GLYPH_H) * UI / 2;
+    this.kills = this.fixed(pixelText(scene, MARGIN + (SKULL.size + 3) * UI, textTop, '0', UI));
 
     const right = scene.cameras.main.width - MARGIN;
     this.timer = this.fixed(pixelText(scene, right, MARGIN, '0:00', UI).setOrigin(1, 0));
@@ -39,7 +47,7 @@ export class Hud {
 
     // The last heart beats.
     const last = this.hearts[0];
-    if (hp === 1 && !last.popping) last.setScale(UI * (1 + 0.12 * Math.max(0, Math.sin(now / 110))));
+    if (hp === 1 && !last.popping) last.setScale(HEART_SCALE * (1 + 0.12 * Math.max(0, Math.sin(now / 110))));
 
     this.kills.setText(String(kills));
     this.timer.setText(`${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`);
@@ -47,11 +55,11 @@ export class Hud {
   }
 
   loseHeart(heart) {
-    heart.setFrame('ui_heart_empty').setTintFill(0xffffff).setScale(UI * 1.6);
+    heart.setFrame('ui_heart_empty').setTintFill(0xffffff).setScale(HEART_SCALE * 1.6);
     heart.popping = true;
     this.scene.tweens.add({
       targets: heart,
-      scale: UI,
+      scale: HEART_SCALE,
       duration: 260,
       ease: 'Back.easeOut',
       onComplete: () => {
