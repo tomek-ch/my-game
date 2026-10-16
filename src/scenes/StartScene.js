@@ -8,20 +8,22 @@ import { PAD } from '../input/controls.js';
 const UI = 3; // screen pixels per font pixel for the control rows
 const KEY_COLOR = 0xf2c14e;
 const PAD_COLOR = 0x5ce1ff;
-const COLUMNS = { keys: 380, pad: 420, action: 660 }; // keys are right-aligned, the rest left-aligned
-const CONTROLS = [
-  ['WSAD', 'Left stick', 'Move'],
-  ['Mouse', 'Right stick', 'Aim'],
-  ['Space', 'RT / A', 'Dash'],
-  ['Left click', 'RB', 'Melee'],
-  ['Right click', 'LB', 'Shot - sword hits charge it'],
-];
+const ACTIONS = ['Move', 'Aim', 'Dash', 'Melee', 'Shot - sword hits charge it'];
+// The controls list shows one device at a time: its inputs, in ACTIONS order.
+const VIEWS = {
+  kbm: { tab: 'Keyboard', color: KEY_COLOR, inputs: ['WSAD', 'Mouse', 'Space', 'Left click', 'Right click'] },
+  pad: { tab: 'Gamepad', color: PAD_COLOR, inputs: ['Left stick', 'Right stick', 'RT / A', 'RB', 'LB'] },
+};
+const INPUT_RIGHT = 480; // inputs are right-aligned to here, actions left-aligned after a gap
+const ACTION_LEFT = 520;
 
 const deviceName = (device) => (device === 'kbm' ? 'Keyboard + mouse' : `Gamepad ${device + 1}`);
 
-// The title screen: the controls over a dimmed dungeon. A click or key starts a solo run on keyboard
-// and mouse, A on a gamepad a solo run on that gamepad. 2 or Y opens co-op: that device is player 1,
-// and the run starts when a second device joins (another gamepad, or the keyboard and mouse).
+// The title screen: the controls over a dimmed dungeon, for a gamepad if one is connected and for the
+// keyboard and mouse otherwise; Tab, X or clicking a tab switches between them by hand. A click or
+// key starts a solo run on keyboard and mouse, A on a gamepad a solo run on that gamepad. 2 or Y opens
+// co-op: that device is player 1, and the run starts when a second device joins (another gamepad, or
+// the keyboard and mouse).
 export class StartScene extends Phaser.Scene {
   constructor() {
     super('start');
@@ -38,13 +40,28 @@ export class StartScene extends Phaser.Scene {
     this.add.sprite(cx, 150, 'dungeon', 'knight_m_idle_anim_f0')
       .setScale(5).setScrollFactor(0).play('knight_m_idle');
 
-    pixelText(this, cx, 260, 'Controls', 5).setOrigin(0.5).setTint(BLOOD[3]);
-    CONTROLS.forEach(([key, pad, action], i) => {
-      const y = 320 + i * 42;
-      pixelText(this, COLUMNS.keys, y, key, UI).setOrigin(1, 0).setTint(KEY_COLOR);
-      pixelText(this, COLUMNS.pad, y, pad, UI).setTint(PAD_COLOR);
-      pixelText(this, COLUMNS.action, y, action, UI);
+    pixelText(this, cx, 250, 'Controls', 5).setOrigin(0.5).setTint(BLOOD[3]);
+    this.tabs = {
+      kbm: pixelText(this, cx - 20, 300, VIEWS.kbm.tab, 2).setOrigin(1, 0.5),
+      pad: pixelText(this, cx + 20, 300, VIEWS.pad.tab, 2).setOrigin(0, 0.5),
+    };
+    for (const tab of Object.values(this.tabs)) tab.setInteractive({ useHandCursor: true });
+    pixelText(this, cx, 300, '/', 2).setOrigin(0.5).setAlpha(0.4);
+    this.inputRows = ACTIONS.map((action, i) => {
+      const y = 335 + i * 42;
+      pixelText(this, ACTION_LEFT, y, action, UI);
+      return pixelText(this, INPUT_RIGHT, y, '', UI).setOrigin(1, 0);
     });
+    // Follow the connected devices until a view is picked by hand.
+    this.viewPicked = false;
+    const followPads = () => {
+      // Phaser keeps disconnected pads in its list, so ask the browser.
+      const padConnected = [...(navigator.getGamepads?.() ?? [])].some((pad) => pad?.connected);
+      if (!this.viewPicked) this.showView(padConnected ? 'pad' : 'kbm');
+    };
+    followPads();
+    this.input.gamepad.on('connected', followPads);
+    this.input.gamepad.on('disconnected', followPads);
 
     const blink = (text) => {
       this.tweens.add({ targets: text, alpha: 0.3, duration: 600, yoyo: true, repeat: -1 });
@@ -61,16 +78,39 @@ export class StartScene extends Phaser.Scene {
 
     this.started = false; // a click and a key press can land in the same frame
     this.input.mouse.disableContextMenu();
-    this.input.on('pointerdown', () => this.onPress('kbm'));
+    this.input.on('pointerdown', (pointer, over) => {
+      const tab = Object.keys(this.tabs).find((view) => over.includes(this.tabs[view]));
+      if (tab) this.pickView(tab);
+      else this.onPress('kbm');
+    });
     this.input.keyboard.on('keydown', (e) => {
       if (e.repeat) return;
       if (e.key === 'Escape') this.showTitle();
-      else this.onPress('kbm', e.key === '2');
+      else if (e.key === 'Tab') {
+        e.preventDefault(); // keep focus on the game
+        this.pickView(this.view === 'kbm' ? 'pad' : 'kbm');
+      } else this.onPress('kbm', e.key === '2');
     });
     this.input.gamepad.on('down', (pad, button) => {
       if (button.index === PAD.back) this.showTitle();
+      else if (button.index === PAD.view) this.pickView(this.view === 'kbm' ? 'pad' : 'kbm');
       else this.onPress(pad.index, button.index === PAD.coop);
     });
+  }
+
+  showView(view) {
+    this.view = view;
+    const { color, inputs } = VIEWS[view];
+    this.inputRows.forEach((row, i) => row.setText(inputs[i].toUpperCase()).setTint(color));
+    for (const [name, tab] of Object.entries(this.tabs)) {
+      if (name === view) tab.setTint(VIEWS[name].color).setAlpha(1);
+      else tab.clearTint().setAlpha(0.4);
+    }
+  }
+
+  pickView(view) {
+    this.viewPicked = true;
+    this.showView(view);
   }
 
   showTitle() {

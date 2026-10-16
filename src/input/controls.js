@@ -2,9 +2,9 @@ import Phaser from 'phaser';
 
 const STICK_DEADZONE = 0.25;
 const AIM_DEADZONE = 0.4;
-// Standard mapping: A, B, Y, LB, RB, RT. Everything you do while aiming is on the right shoulder, so
+// Standard mapping: A, B, X, Y, LB, RB, RT. Everything you do while aiming is on the right shoulder, so
 // the right thumb never leaves the stick: melee RB, shot LB, dash RT (or A).
-export const PAD = { dash: [0, 7], back: 1, coop: 3, melee: 5, shoot: 4, triggers: [6, 7] };
+export const PAD = { dash: [0, 7], back: 1, view: 2, coop: 3, melee: 5, shoot: 4, triggers: [6, 7] };
 const TRIGGER_THRESHOLD = 0.5; // Phaser counts a press only at 1.0, a full pull that some triggers never reach
 
 // What one player wants to do this frame. The game only reads this, never a device, so a player can
