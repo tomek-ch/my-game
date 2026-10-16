@@ -26,7 +26,8 @@ export function registerArt(scene) {
     if (rect.length === 4) texture.add(name, 0, ...rect.map(Number));
   }
 
-  for (const hero of ['knight_m', 'knight_f']) {
+  // Every playable class's heroes (see src/classes/).
+  for (const hero of ['knight_m', 'knight_f', 'lizard_m', 'lizard_f']) {
     loopAnim(scene, `${hero}_idle`, `${hero}_idle_anim_f`, 4, 6);
     loopAnim(scene, `${hero}_run`, `${hero}_run_anim_f`, 4, 12);
   }

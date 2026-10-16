@@ -115,6 +115,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.dashInvulnUntil = now + cfg.durationMs + cfg.invulnGraceMs;
   }
 
+  // Untouchable until `until`, without the hurt blink.
+  shield(until) {
+    this.dashInvulnUntil = Math.max(this.dashInvulnUntil, until);
+  }
+
   // Ends a dash right away, keeping the current velocity.
   stopDash() {
     this.dashLeft = 0;

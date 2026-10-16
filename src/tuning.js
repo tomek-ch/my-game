@@ -89,6 +89,60 @@ export const TUNING = {
         ],
       },
     },
+
+    // No plain dash: the attack is the dash. Hits fill a momentum bar that drains if you stop hitting;
+    // a full bar buys a whirlwind.
+    berserker: {
+      // Dash toward the aim, cutting through everything in the way. A strike that hits something can
+      // be chained straight into the next one; a miss leaves you on cooldown.
+      strike: {
+        distance: 165,
+        durationMs: 140,
+        exitSpeed: 200,
+        invulnGraceMs: 60,    // untouchable for the strike and this long after
+        hitPad: 10,           // reach beyond the two bodies touching
+        bufferMs: 160,
+        chainCooldownMs: 40,  // after a strike that hit something, counted from its end
+        missCooldownMs: 650,  // after a strike that hit nothing
+        stoppedCooldownMs: 450, // after a strike that a heavy enemy stopped: no chaining off a brute
+        assistRange: 60,      // bend toward the nearest enemy within distance + this...
+        assistDeg: 30,        // ...and this close to the aim
+        damage: 2,
+        rageDamage: 3,        // while the bar is at or above meter.rageAt
+        knockback: 380,
+        stopMass: 4,          // enemies this heavy (the brute) stop the strike, unless raging...
+        bounce: 280,          // ...knocking you back at this speed
+        hitstopMs: 45,        // first enemy of a strike; later ones get a shorter freeze
+        chainHitstopMs: 20,
+        killHitstopBonusMs: 20,
+        ghostIntervalMs: 14,
+        shake: { duration: 70, intensity: 0.004 },
+      },
+
+      // Momentum, 0 to max. Drains after a moment without a hit. Hitstop and strikes pause the drain.
+      meter: {
+        max: 100,
+        perHit: 12,
+        perKill: 6,           // on top of perHit
+        graceMs: 700,         // drain starts this long after the last gain
+        drainPerSec: 35,
+        rageAt: 50,           // at or above: harder strikes that go through brutes
+      },
+
+      // A full bar: spin and hit everything around you. Spends the whole bar, kills refund some.
+      spin: {
+        bufferMs: 160,
+        radius: 115,          // from your center to the enemy's edge
+        damage: 4,
+        knockback: 720,
+        stunMs: 450,          // also staggers a brute
+        refundPerKill: 12,
+        swingMs: 260,         // how long the axe takes to go round
+        invulnMs: 300,
+        hitstopMs: 110,
+        shake: { duration: 200, intensity: 0.012 },
+      },
+    },
   },
 
   // Shared fields: radius, hp, maxSpeed, accel, stunMs (how long a normal hit stuns; stunned enemies

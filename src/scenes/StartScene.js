@@ -4,11 +4,12 @@ import { addDungeon } from '../world/dungeon.js';
 import { pixelText } from '../ui/pixelFont.js';
 import { BLOOD } from '../textures.js';
 import { PAD } from '../input/controls.js';
-import { CLASSES } from '../classes/index.js';
+import { CLASSES, CLASS_IDS } from '../classes/index.js';
 
 const UI = 3; // screen pixels per font pixel for the control rows
 const KEY_COLOR = 0xf2c14e;
 const PAD_COLOR = 0x5ce1ff;
+const SLOT_COLORS = [KEY_COLOR, PAD_COLOR]; // P1 and P2, as on the HUD
 // The controls list shows one device at a time: the class's actions with that device's inputs.
 const VIEWS = {
   kbm: { tab: 'Keyboard', color: KEY_COLOR },
@@ -16,14 +17,22 @@ const VIEWS = {
 };
 const INPUT_RIGHT = 480; // inputs are right-aligned to here, actions left-aligned after a gap
 const ACTION_LEFT = 520;
+const MAX_ROWS = Math.max(...Object.values(CLASSES).map((Kit) => Kit.controls.length));
+const PICKER_ARROW_X = 170; // the < > arrows sit this far either side of the class name
+const PREV_KEYS = ['ArrowLeft', 'a', 'A'];
+const NEXT_KEYS = ['ArrowRight', 'd', 'D'];
+const PAD_PREV = [14, 4]; // d-pad left, LB
+const PAD_NEXT = [15, 5]; // d-pad right, RB
 
 const deviceName = (device) => (device === 'kbm' ? 'Keyboard + mouse' : `Gamepad ${device + 1}`);
 
-// The title screen: the controls over a dimmed dungeon, for a gamepad if one is connected and for the
-// keyboard and mouse otherwise; Tab, X or clicking a tab switches between them by hand. A click or
-// key starts a solo run on keyboard and mouse, A on a gamepad a solo run on that gamepad. 2 or Y opens
-// co-op: that device is player 1, and the run starts when a second device joins (another gamepad, or
-// the keyboard and mouse).
+// The title screen: a class picker, and that class's controls over a dimmed dungeon, for a gamepad if
+// one is connected and for the keyboard and mouse otherwise; Tab, X or clicking a tab switches between
+// them by hand. Left / right (arrows, A / D, the d-pad, LB / RB, or clicking the arrows) picks the
+// class. A click or another key starts a solo run on keyboard and mouse, A on a gamepad a solo run on
+// that gamepad. 2 or Y opens co-op: that device is player 1 with the class picked so far, the picker
+// moves on to player 2's class, and the run starts when a second device joins (another gamepad, or the
+// keyboard and mouse). Open the game with ?class=berserker to start on that class.
 export class StartScene extends Phaser.Scene {
   constructor() {
     super('start');
@@ -37,22 +46,33 @@ export class StartScene extends Phaser.Scene {
     this.add.rectangle(0, 0, width, height, 0x0b0710, 0.75).setOrigin(0).setScrollFactor(0);
 
     const cx = width / 2;
-    this.add.sprite(cx, 150, 'dungeon', 'knight_m_idle_anim_f0')
-      .setScale(5).setScrollFactor(0).play('knight_m_idle');
+    const wanted = CLASS_IDS.indexOf(new URLSearchParams(location.search).get('class'));
+    this.picks = [Math.max(wanted, 0), Math.max(wanted, 0)]; // class index per player slot
+    this.slot = 0; // whose class the picker shows
+    this.hero = this.add.sprite(cx, 140, 'dungeon', 'knight_m_idle_anim_f0').setScale(5).setScrollFactor(0);
+    this.className = pixelText(this, cx, 232, '', 4).setOrigin(0.5);
+    this.arrows = [
+      pixelText(this, cx - PICKER_ARROW_X, 232, '<', 4).setOrigin(0.5),
+      pixelText(this, cx + PICKER_ARROW_X, 232, '>', 4).setOrigin(0.5),
+    ];
+    for (const arrow of this.arrows) arrow.setInteractive({ useHandCursor: true }).setAlpha(0.6);
 
-    pixelText(this, cx, 250, 'Controls', 5).setOrigin(0.5).setTint(BLOOD[3]);
+    pixelText(this, cx, 282, 'Controls', 4).setOrigin(0.5).setTint(BLOOD[3]);
     this.tabs = {
-      kbm: pixelText(this, cx - 20, 300, VIEWS.kbm.tab, 2).setOrigin(1, 0.5),
-      pad: pixelText(this, cx + 20, 300, VIEWS.pad.tab, 2).setOrigin(0, 0.5),
+      kbm: pixelText(this, cx - 20, 320, VIEWS.kbm.tab, 2).setOrigin(1, 0.5),
+      pad: pixelText(this, cx + 20, 320, VIEWS.pad.tab, 2).setOrigin(0, 0.5),
     };
     for (const tab of Object.values(this.tabs)) tab.setInteractive({ useHandCursor: true });
-    pixelText(this, cx, 300, '/', 2).setOrigin(0.5).setAlpha(0.4);
-    this.kit = CLASSES.knight;
-    this.inputRows = this.kit.controls.map(({ action }, i) => {
-      const y = 335 + i * 42;
-      pixelText(this, ACTION_LEFT, y, action, UI);
-      return pixelText(this, INPUT_RIGHT, y, '', UI).setOrigin(1, 0);
+    pixelText(this, cx, 320, '/', 2).setOrigin(0.5).setAlpha(0.4);
+    this.rows = Array.from({ length: MAX_ROWS }, (_, i) => {
+      const y = 350 + i * 40;
+      return {
+        action: pixelText(this, ACTION_LEFT, y, '', UI),
+        input: pixelText(this, INPUT_RIGHT, y, '', UI).setOrigin(1, 0),
+      };
     });
+    this.view = 'kbm';
+    this.showClass();
     // Follow the connected devices until a view is picked by hand.
     this.viewPicked = false;
     const followPads = () => {
@@ -81,7 +101,9 @@ export class StartScene extends Phaser.Scene {
     this.input.mouse.disableContextMenu();
     this.input.on('pointerdown', (pointer, over) => {
       const tab = Object.keys(this.tabs).find((view) => over.includes(this.tabs[view]));
+      const arrow = this.arrows.findIndex((a) => over.includes(a));
       if (tab) this.pickView(tab);
+      else if (arrow >= 0) this.cycleClass('kbm', arrow === 0 ? -1 : 1);
       else this.onPress('kbm');
     });
     this.input.keyboard.on('keydown', (e) => {
@@ -90,19 +112,46 @@ export class StartScene extends Phaser.Scene {
       else if (e.key === 'Tab') {
         e.preventDefault(); // keep focus on the game
         this.pickView(this.view === 'kbm' ? 'pad' : 'kbm');
-      } else this.onPress('kbm', e.key === '2');
+      } else if (PREV_KEYS.includes(e.key)) this.cycleClass('kbm', -1);
+      else if (NEXT_KEYS.includes(e.key)) this.cycleClass('kbm', 1);
+      else this.onPress('kbm', e.key === '2');
     });
     this.input.gamepad.on('down', (pad, button) => {
       if (button.index === PAD.back) this.showTitle();
       else if (button.index === PAD.view) this.pickView(this.view === 'kbm' ? 'pad' : 'kbm');
+      else if (PAD_PREV.includes(button.index)) this.cycleClass(pad.index, -1);
+      else if (PAD_NEXT.includes(button.index)) this.cycleClass(pad.index, 1);
       else this.onPress(pad.index, button.index === PAD.coop);
     });
+  }
+
+  get kit() {
+    return CLASSES[CLASS_IDS[this.picks[this.slot]]];
+  }
+
+  // `device` asked for the previous (-1) or next (1) class. While waiting for player 2, player 1's
+  // class is locked in and only the other devices pick.
+  cycleClass(device, step) {
+    if (this.p1 !== null && device === this.p1) return;
+    const n = CLASS_IDS.length;
+    this.picks[this.slot] = (this.picks[this.slot] + step + n) % n;
+    this.showClass();
+  }
+
+  showClass() {
+    const Kit = this.kit;
+    const hero = Kit.heroes[this.slot % Kit.heroes.length];
+    this.hero.play(`${hero}_idle`);
+    this.className.setText(Kit.title.toUpperCase()).setTint(this.slot > 0 ? SLOT_COLORS[this.slot] : 0xffffff);
+    this.rows.forEach((row, i) => row.action.setText((Kit.controls[i]?.action ?? '').toUpperCase()));
+    this.showView(this.view);
   }
 
   showView(view) {
     this.view = view;
     const { color } = VIEWS[view];
-    this.inputRows.forEach((row, i) => row.setText(this.kit.controls[i][view].toUpperCase()).setTint(color));
+    const { controls } = this.kit;
+    this.rows.forEach((row, i) => row.input.setText((controls[i]?.[view] ?? '').toUpperCase()).setTint(color));
     for (const [name, tab] of Object.entries(this.tabs)) {
       if (name === view) tab.setTint(VIEWS[name].color).setAlpha(1);
       else tab.clearTint().setAlpha(0.4);
@@ -116,15 +165,20 @@ export class StartScene extends Phaser.Scene {
 
   showTitle() {
     this.p1 = null;
+    this.slot = 0;
+    this.showClass();
     for (const t of this.titleHints) t.setVisible(true);
     for (const t of [this.joinP1, this.joinP2, this.joinBack]) t.setVisible(false);
   }
 
   showJoin(p1) {
     this.p1 = p1;
+    this.slot = 1;
+    this.showClass();
     for (const t of this.titleHints) t.setVisible(false);
-    this.joinP1.setText(`P1: ${deviceName(p1)}`.toUpperCase()).setVisible(true);
-    const waiting = p1 === 'kbm' ? 'P2: press A on a gamepad' : 'P2: press A on another gamepad, or click';
+    const p1Class = CLASSES[CLASS_IDS[this.picks[0]]].title;
+    this.joinP1.setText(`P1: ${deviceName(p1)} - ${p1Class}`.toUpperCase()).setVisible(true);
+    const waiting = p1 === 'kbm' ? 'P2: pick a class, then press A on a gamepad' : 'P2: pick a class, then press A on another gamepad, or click';
     this.joinP2.setText(waiting.toUpperCase()).setVisible(true);
     this.joinBack.setVisible(true);
   }
@@ -140,7 +194,8 @@ export class StartScene extends Phaser.Scene {
   }
 
   start(devices) {
-    if (!this.started) this.scene.start('game', { devices });
+    const classes = devices.map((_, i) => CLASS_IDS[this.picks[i]]);
+    if (!this.started) this.scene.start('game', { devices, classes });
     this.started = true;
   }
 }

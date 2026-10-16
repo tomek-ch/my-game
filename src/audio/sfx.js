@@ -52,6 +52,15 @@ class Sfx {
     ]);
   }
 
+  // The berserker's whirlwind: a long rising whoosh with a low thump under it.
+  whirl() {
+    return this.play('whirl', null, null, 0, (o) => [
+      this.noise(o, { freq: 600, to: 3600, q: 1.2, dur: 0.3, vol: 0.5 }),
+      this.noise(o, { freq: 2800, to: 900, q: 1.2, dur: 0.18, vol: 0.3, delay: 0.12 }),
+      this.tone(o, { freq: 150, to: 45, dur: 0.25, vol: 0.6 }),
+    ]);
+  }
+
   hit(heavy) {
     return this.play('hit', null, null, 25, (o) => [
       this.tone(o, { freq: heavy ? 130 : 170, to: heavy ? 35 : 50, dur: heavy ? 0.16 : 0.09, vol: heavy ? 0.9 : 0.6 }),

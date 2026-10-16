@@ -1,0 +1,262 @@
+import Phaser from 'phaser';
+import { TUNING } from '../tuning.js';
+import { sfx } from '../audio/sfx.js';
+import { HeroClass } from './HeroClass.js';
+import { isFrozen } from '../entities/hitstop.js';
+
+export const MOMENTUM_TINT = 0xff8a3d;
+export const RAGE_TINT = 0xff3b3b;
+const STRIKE_SWING_DEG = 110; // the axe starts this far to one side of the strike and ends at rest on the other
+
+// No plain dash: the attack is a dash strike toward the aim that cuts through everything in its path.
+// A strike that hits can be chained straight into the next; a miss, or bouncing off a brute, puts it
+// on cooldown. Hits fill the
+// momentum bar, which drains when you stop hitting. Past half, strikes hit harder and go through
+// brutes; a full bar buys a whirlwind that hits everything around you.
+export class Berserker extends HeroClass {
+  static id = 'berserker';
+  static title = 'Berserker';
+  static heroes = ['lizard_m', 'lizard_f'];
+  static weapon = { frame: 'weapon_waraxe', originY: 0.85 };
+  static hud = 'meter';
+  static controls = [
+    { action: 'Move', kbm: 'WSAD', pad: 'Left stick' },
+    { action: 'Aim', kbm: 'Mouse', pad: 'Right stick' },
+    { action: 'Dash strike - hits chain it', kbm: 'Left click / Space', pad: 'RB / RT / A' },
+    { action: 'Whirlwind - full bar', kbm: 'Right click', pad: 'LB' },
+  ];
+
+  constructor(scene, player) {
+    super(scene, player);
+    this.meter = 0;
+    this.lastGainAt = -Infinity;
+    this.strike = null;       // the strike in progress, see tryStrike()
+    this.side = 1;            // strikes alternate which way the axe swings
+    this.cooldownShown = true; // whether the dash-back ring has played since the last miss
+  }
+
+  get hudValue() {
+    return this.meter;
+  }
+
+  get raging() {
+    return this.meter >= this.cfg.meter.rageAt;
+  }
+
+  update(now, dt) {
+    const p = this.player;
+    // Physics moved the player since last frame: hit whatever that stretch of the strike went through.
+    if (this.strike) {
+      this.sweepStrike(now);
+      if (!p.isDashing) this.endStrike(now);
+    }
+    this.tryStrike(now);
+    this.trySpin(now);
+    if (isFrozen(p, now)) return; // a hit just landed: the rest of the strike waits out the hitstop
+    p.move(p.controls.move, dt, now);
+    this.drain(now, dt);
+
+    if (p.isDashing && now >= this.nextGhostAt) {
+      this.scene.fx.afterimage(p, this.raging ? RAGE_TINT : MOMENTUM_TINT);
+      this.nextGhostAt = now + this.cfg.strike.ghostIntervalMs;
+    }
+    // Only a miss's cooldown is worth announcing; chained strikes are ready again at once.
+    if (!this.cooldownShown && !this.strike && now >= p.nextDashAt) {
+      this.cooldownShown = true;
+      this.scene.fx.readyRing(p, TUNING.player.radius, MOMENTUM_TINT);
+      sfx.dashReady();
+    }
+  }
+
+  // Melee and dash both strike, toward the aim (bent toward an enemy roughly in front).
+  tryStrike(now) {
+    const p = this.player;
+    const c = p.controls;
+    const S = this.cfg.strike;
+    const queuedAt = Math.max(c.attackQueuedAt, c.dashQueuedAt);
+    if (now - queuedAt > S.bufferMs || !p.canDash(now)) return;
+    c.attackQueuedAt = -Infinity;
+    c.dashQueuedAt = -Infinity;
+
+    const target = this.scene.findTarget(p, S.distance + S.assistRange, S.assistDeg);
+    const angle = target ? target.angle : p.aimAngle;
+    p.dash(angle, now, { ...S, cooldownMs: 0 });
+    p.nextDashAt = Infinity; // set when the strike ends, by whether it hit
+    this.strike = {
+      angle,
+      startX: p.x,
+      startY: p.y,
+      lastX: p.x,
+      lastY: p.y,
+      hit: new Set(),
+      struckAny: false,
+      stopped: false,
+    };
+
+    this.side = -this.side;
+    const swing = Phaser.Math.DegToRad(STRIKE_SWING_DEG);
+    const rest = Phaser.Math.DegToRad(65);
+    p.swingWeapon(angle - this.side * swing, angle + this.side * rest, S.durationMs, this.side, now);
+    this.scene.fx.dashStart(p, angle);
+    sfx.dash();
+  }
+
+  // Hits every enemy the player's body passed (with hitPad to spare) between last frame and this one,
+  // nearest first. A heavy enemy stops the strike unless raging, and nothing past it is hit.
+  sweepStrike(now) {
+    const p = this.player;
+    const scene = this.scene;
+    const S = this.cfg.strike;
+    const strike = this.strike;
+    const ax = strike.lastX;
+    const ay = strike.lastY;
+    const seg = new Phaser.Math.Vector2(p.x - ax, p.y - ay);
+    const len = seg.length();
+    const fwd = len > 0.01 ? seg.clone().scale(1 / len) : new Phaser.Math.Vector2().setToPolar(strike.angle);
+    strike.lastX = p.x;
+    strike.lastY = p.y;
+
+    // Distance along the segment and away from it, for a point (x, y).
+    const project = (x, y) => {
+      const along = Phaser.Math.Clamp((x - ax) * fwd.x + (y - ay) * fwd.y, 0, len);
+      const cx = ax + fwd.x * along;
+      const cy = ay + fwd.y * along;
+      return { along, cx, cy, away: Math.hypot(x - cx, y - cy) };
+    };
+    const reach = (radius) => TUNING.player.radius + radius + S.hitPad;
+
+    scene.cutBullets((x, y, radius) => project(x, y).away <= reach(radius));
+
+    const victims = [];
+    for (const enemy of scene.enemies.getChildren()) {
+      if (enemy.dying || enemy.airborne || strike.hit.has(enemy)) continue;
+      const pr = project(enemy.x, enemy.y);
+      if (pr.away <= reach(enemy.radius)) victims.push({ enemy, ...pr });
+    }
+    if (victims.length === 0) return;
+    victims.sort((a, b) => a.along - b.along);
+
+    const raging = this.raging;
+    let hits = 0;
+    let kills = 0;
+    let stopped = false;
+    const struck = [];
+    for (const { enemy, cx, cy } of victims) {
+      strike.hit.add(enemy);
+      const stopper = !raging && enemy.cfg.mass >= S.stopMass;
+      // Flung out of the way: sideways off the path and a little forward.
+      const dir = new Phaser.Math.Vector2(enemy.x - cx, enemy.y - cy);
+      if (dir.lengthSq() < 0.01) dir.set(-fwd.y, fwd.x);
+      dir.normalize().add(fwd.clone().scale(stopper ? 1 : 0.6)).normalize();
+      const hit = { damage: raging ? S.rageDamage : S.damage, dir, knockback: S.knockback, heavy: raging };
+      hits++;
+      if (scene.strikeEnemy(enemy, hit, now, raging ? 0.45 : 0.3)) kills++;
+      else struck.push(enemy);
+      if (stopper) {
+        stopped = true;
+        break;
+      }
+    }
+
+    const firstHit = !strike.struckAny;
+    strike.struckAny = true;
+    this.gain(hits * this.cfg.meter.perHit + kills * this.cfg.meter.perKill, now);
+    if (hits > kills) sfx.hit(raging);
+    const freeze = (firstHit ? S.hitstopMs : S.chainHitstopMs) + (kills > 0 ? S.killHitstopBonusMs : 0);
+    scene.hitstop(freeze, p, ...struck);
+    scene.fx.shake(S.shake);
+
+    if (stopped) {
+      // Bounced off: back the way you came, briefly out of control, and the chain is broken.
+      strike.stopped = true;
+      p.stopDash();
+      p.body.velocity.copy(fwd).scale(-S.bounce);
+      p.stunUntil = now + TUNING.player.hurtStunMs;
+    }
+  }
+
+  endStrike(now) {
+    const p = this.player;
+    const S = this.cfg.strike;
+    const strike = this.strike;
+    this.strike = null;
+    const chained = strike.struckAny && !strike.stopped;
+    let cooldown = S.chainCooldownMs;
+    if (strike.stopped) cooldown = S.stoppedCooldownMs;
+    else if (!strike.struckAny) cooldown = S.missCooldownMs;
+    p.nextDashAt = now + cooldown;
+    this.cooldownShown = chained;
+    this.scene.fx.streak(strike.startX, strike.startY, p.x, p.y, TUNING.player.radius,
+      this.raging ? RAGE_TINT : MOMENTUM_TINT);
+  }
+
+  // Fire with a full bar: hit everything around you. Waits for a strike in progress to finish.
+  trySpin(now) {
+    const p = this.player;
+    const scene = this.scene;
+    const W = this.cfg.spin;
+    const c = p.controls;
+    if (p.isDashing || now - c.shootQueuedAt > W.bufferMs) return;
+    c.shootQueuedAt = -Infinity;
+    if (this.meter < this.cfg.meter.max) {
+      sfx.shotEmpty();
+      scene.hud.shakeResource(this.playerIndex);
+      return;
+    }
+    this.meter = 0;
+
+    const inSpin = (x, y, radius) => Phaser.Math.Distance.Between(p.x, p.y, x, y) <= W.radius + radius;
+    scene.cutBullets(inSpin);
+    let hits = 0;
+    let kills = 0;
+    const struck = [];
+    for (const enemy of [...scene.enemies.getChildren()]) {
+      if (enemy.dying || enemy.airborne || !inSpin(enemy.x, enemy.y, enemy.radius)) continue;
+      const dir = new Phaser.Math.Vector2(enemy.x - p.x, enemy.y - p.y);
+      if (dir.lengthSq() < 0.01) dir.setToPolar(p.aimAngle);
+      dir.normalize();
+      const hit = { damage: W.damage, dir, knockback: W.knockback, stunMs: W.stunMs, heavy: true };
+      hits++;
+      if (scene.strikeEnemy(enemy, hit, now, 0.5)) kills++;
+      else struck.push(enemy);
+    }
+    this.gain(kills * W.refundPerKill, now);
+
+    this.side = -this.side;
+    const from = p.aimAngle;
+    p.swingWeapon(from, from + this.side * Math.PI * 2, W.swingMs, this.side, now);
+    p.shield(now + W.invulnMs);
+    scene.fx.slash(p, from, { range: W.radius, arcDeg: 360, sweep: this.side, finisher: true, color: RAGE_TINT });
+    scene.fx.slam(p.x, p.y, W.radius, MOMENTUM_TINT);
+    scene.fx.shake(W.shake);
+    sfx.whirl();
+    if (hits > kills) sfx.hit(true);
+    if (hits > 0) scene.hitstop(W.hitstopMs, p, ...struck);
+
+    // Strike straight out of the spin.
+    p.nextDashAt = Math.min(p.nextDashAt, now);
+    this.cooldownShown = true;
+  }
+
+  gain(amount, now) {
+    if (amount <= 0) return;
+    const M = this.cfg.meter;
+    const before = this.meter;
+    this.meter = Math.min(this.meter + amount, M.max);
+    this.lastGainAt = now;
+    const p = this.player;
+    if (this.meter >= M.max && before < M.max) {
+      this.scene.fx.readyRing(p, TUNING.player.radius, RAGE_TINT);
+      sfx.shotReady();
+    } else if (this.meter >= M.rageAt && before < M.rageAt) {
+      this.scene.fx.readyRing(p, TUNING.player.radius, MOMENTUM_TINT);
+    }
+  }
+
+  // The bar holds during a strike and for a moment after the last gain, then drains.
+  drain(now, dt) {
+    const M = this.cfg.meter;
+    if (this.strike || now - this.lastGainAt < M.graceMs) return;
+    this.meter = Math.max(0, this.meter - M.drainPerSec * dt);
+  }
+}

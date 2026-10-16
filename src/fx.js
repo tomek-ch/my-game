@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { TUNING } from './tuning.js';
 import { ART_SCALE } from './art.js';
 import { BLOOD, SPLAT_VARIANTS } from './textures.js';
-import { pixelSector } from './pixelShapes.js';
+import { pixelLine, pixelSector } from './pixelShapes.js';
 
 const S = ART_SCALE;
 const BLOOD_DEPTH = 1;    // stains: above the floor, below shadows and characters
@@ -155,6 +155,16 @@ export class Fx {
       onUpdate: draw,
       onComplete: () => g.destroy(),
     });
+  }
+
+  // A band `width` px wide along a path that fades out, like the cut left by a dash strike.
+  streak(x1, y1, x2, y2, width, color) {
+    const g = this.scene.add.graphics().setDepth(9);
+    g.fillStyle(color, 0.35);
+    pixelLine(g, x1, y1, x2, y2, width);
+    g.fillStyle(color, 0.9);
+    pixelLine(g, x1, y1, x2, y2, Math.max(S, width / 4));
+    this.scene.tweens.add({ targets: g, alpha: 0, duration: 200, ease: 'Quad.easeIn', onComplete: () => g.destroy() });
   }
 
   // A crescent that sweeps across the swing arc (direction from swing.sweep), follows `owner`, then fades.
