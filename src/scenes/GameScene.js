@@ -8,14 +8,10 @@ import { ART_SCALE } from '../art.js';
 import { Hud } from '../ui/Hud.js';
 import { Fx } from '../fx.js';
 import { sfx } from '../audio/sfx.js';
-import { BOLT_TINT } from '../textures.js';
 import { createControls } from '../input/controls.js';
 import { freeze, isFrozen, thaw } from '../entities/hitstop.js';
+import { CLASSES } from '../classes/index.js';
 
-const M = TUNING.melee;
-const D = TUNING.dash;
-const R = TUNING.ranged;
-const HEROES = ['knight_m', 'knight_f'];
 const MAX_PLAYERS = 2;
 const LEASH_MARGIN = 40; // co-op players can't walk further apart than the screen, minus this
 
@@ -25,8 +21,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   // data.devices: one input device per local player, 'kbm' or a gamepad index (see controls.js).
+  // data.classes: each player's class id (see src/classes/), knight if missing.
   init(data) {
     this.devices = (data?.devices ?? ['kbm']).slice(0, MAX_PLAYERS);
+    this.classes = this.devices.map((_, i) => (CLASSES[data?.classes?.[i]] ? data.classes[i] : 'knight'));
     this.playerCount = this.devices.length;
   }
 
@@ -41,7 +39,10 @@ export class GameScene extends Phaser.Scene {
     for (let i = 0; i < this.playerCount; i++) {
       const controls = createControls(this, this.devices[i]);
       const x = W / 2 + (i - (this.playerCount - 1) / 2) * 60;
-      this.players.push(new Player(this, x, H / 2, { hero: HEROES[i], controls }));
+      const Kit = CLASSES[this.classes[i]];
+      const player = new Player(this, x, H / 2, { hero: Kit.heroes[i % Kit.heroes.length], weapon: Kit.weapon, controls });
+      player.kit = new Kit(this, player);
+      this.players.push(player);
     }
     this.enemies = this.physics.add.group();
     // Enemy-vs-enemy contact skips Arcade: its circle separation zeroes both velocities (velocity *
@@ -83,7 +84,7 @@ export class GameScene extends Phaser.Scene {
     this.events.on('postupdate', this.syncVisuals, this);
     this.events.once('shutdown', () => this.events.off('postupdate', this.syncVisuals, this));
 
-    this.hud = new Hud(this, TUNING.player.maxHp, this.playerCount);
+    this.hud = new Hud(this, TUNING.player.maxHp, this.classes.map((id) => CLASSES[id]));
   }
 
   update(_time, delta) {
@@ -98,11 +99,7 @@ export class GameScene extends Phaser.Scene {
       const c = p.controls;
       c.update(p);
       if (c.aimAngle !== null) p.aimAngle = c.aimAngle;
-      this.tryDash(p, now);
-      p.move(c.move, dt, now);
-      this.tryAttack(p, now);
-      this.tryShoot(p, now);
-      this.updateDashFx(p, now);
+      p.kit.update(now, dt);
     }
     this.updateProjectiles(this.bolts);
     this.updateProjectiles(this.enemyBullets);
@@ -132,154 +129,6 @@ export class GameScene extends Phaser.Scene {
       }
     }
     return best;
-  }
-
-  // Dash where you're moving, or where you're aiming when standing still.
-  tryDash(p, now) {
-    const c = p.controls;
-    if (now - c.dashQueuedAt > D.bufferMs || !p.canDash(now)) return;
-    c.dashQueuedAt = -Infinity;
-    const angle = c.move.lengthSq() > 0 ? c.move.angle() : p.aimAngle;
-    p.dash(angle, now);
-    this.fx.dashStart(p, angle);
-    sfx.dash();
-    p.dashWasReady = false;
-  }
-
-  updateDashFx(p, now) {
-    if (p.isDashing && now >= p.nextGhostAt) {
-      this.fx.afterimage(p);
-      p.nextGhostAt = now + D.ghostIntervalMs;
-    }
-    const ready = !p.isDashing && now >= p.nextDashAt;
-    if (ready && !p.dashWasReady) {
-      this.fx.readyRing(p, TUNING.player.radius);
-      sfx.dashReady();
-    }
-    p.dashWasReady = ready;
-  }
-
-  tryAttack(p, now) {
-    // Clicks during a dash stay buffered and fire as it ends.
-    if (p.isDashing) return;
-    const c = p.controls;
-    if (now - c.attackQueuedAt > M.bufferMs || now < p.nextAttackAt) return;
-    c.attackQueuedAt = -Infinity;
-
-    if (now > p.comboExpiresAt) p.comboIndex = 0;
-    const swing = M.swings[p.comboIndex];
-    const isFinisher = p.comboIndex === M.swings.length - 1;
-    p.nextAttackAt = now + swing.recoveryMs + (isFinisher ? M.comboCooldownMs : 0);
-    p.comboExpiresAt = now + swing.recoveryMs + M.comboWindowMs;
-    p.comboIndex = isFinisher ? 0 : p.comboIndex + 1;
-
-    // Aim assist: step toward the nearest enemy roughly in front, and bend the swing toward it.
-    const target = this.findSwingTarget(p, swing);
-    let angle = p.aimAngle;
-    let stepDist = swing.step;
-    if (target) {
-      angle = target.angle;
-      const gap = TUNING.player.radius + target.enemy.radius + M.stepGap;
-      stepDist = Phaser.Math.Clamp(target.dist - gap, 0, swing.maxStep);
-    }
-    p.step(angle, stepDist, M.stepMs);
-    this.fx.slash(p, angle, swing);
-    p.swingSword(angle, swing, now);
-    sfx.swing(swing.finisher);
-
-    // Resolve hits from where the step ends, so the swing lands where it's drawn.
-    const ox = p.x + Math.cos(angle) * stepDist;
-    const oy = p.y + Math.sin(angle) * stepDist;
-    const halfArc = Phaser.Math.DegToRad(swing.arcDeg) / 2;
-    let hits = 0;
-    let kills = 0;
-    const struck = [];
-
-    const inSwing = (x, y, radius) => {
-      const dist = Phaser.Math.Distance.Between(ox, oy, x, y);
-      if (dist > swing.range + radius) return false;
-      if (dist < TUNING.player.radius + radius + 6) return true;
-      return Math.abs(Phaser.Math.Angle.Wrap(Math.atan2(y - oy, x - ox) - angle)) <= halfArc;
-    };
-
-    // Swings delete enemy bullets.
-    for (const bullet of [...this.enemyBullets.getChildren()]) {
-      if (!inSwing(bullet.x, bullet.y, 7)) continue;
-      this.fx.hitSparks(bullet.x, bullet.y);
-      sfx.deflect(bullet.x, bullet.y);
-      bullet.destroy();
-    }
-
-    for (const enemy of [...this.enemies.getChildren()]) {
-      if (enemy.dying || !inSwing(enemy.x, enemy.y, enemy.radius)) continue;
-
-      hits++;
-      const dir = new Phaser.Math.Vector2(enemy.x - ox, enemy.y - oy);
-      if (dir.lengthSq() < 0.01) dir.setToPolar(angle);
-      dir.normalize();
-      this.fx.hitSparks(enemy.x - dir.x * enemy.radius, enemy.y - dir.y * enemy.radius);
-      const hit = { damage: swing.damage, dir, knockback: swing.knockback, heavy: swing.finisher };
-      if (enemy.takeHit(hit, now)) {
-        kills++;
-        this.killEnemy(enemy);
-      } else {
-        this.fx.flash(enemy);
-        this.fx.squash(enemy, swing.finisher ? 0.45 : 0.3);
-        struck.push(enemy);
-      }
-    }
-
-    if (hits > kills) sfx.hit(swing.finisher);
-    if (hits > 0) {
-      this.hitstop(swing.hitstopMs + (kills > 0 ? M.killHitstopBonusMs : 0), p, ...struck);
-      this.fx.shake(swing.shake);
-    }
-    this.gainPips(p, hits * R.hitPips);
-  }
-
-  gainPips(p, pips) {
-    const before = Math.floor(p.pips / R.pipsPerCharge);
-    p.pips = Math.min(p.pips + pips, R.maxCharges * R.pipsPerCharge);
-    if (Math.floor(p.pips / R.pipsPerCharge) > before) {
-      this.fx.readyRing(p, TUNING.player.radius, BOLT_TINT);
-      sfx.shotReady();
-    }
-  }
-
-  // Fire (right click) shoots one charged bolt, exactly where you aim. No charge, no shot.
-  tryShoot(p, now) {
-    const c = p.controls;
-    if (p.isDashing || now < p.nextShotAt || now - c.shootQueuedAt > R.bufferMs) return;
-    c.shootQueuedAt = -Infinity;
-    if (p.pips < R.pipsPerCharge) {
-      sfx.shotEmpty();
-      this.hud.shakeCharges(this.players.indexOf(p));
-      return;
-    }
-    p.pips -= R.pipsPerCharge;
-    p.nextShotAt = now + R.cooldownMs;
-
-    const angle = p.aimAngle;
-    const muzzle = TUNING.player.radius + 12;
-    const x = p.x + Math.cos(angle) * muzzle;
-    const y = p.y + Math.sin(angle) * muzzle;
-
-    // Configure after create(): the group resets body settings when it adopts a child.
-    const bolt = this.bolts.create(x, y, 'bolt').setScale(ART_SCALE);
-    bolt.body.setCircle(4.5, 2.5, 0); // art pixels: radius 9 on screen, centered (the body doesn't rotate)
-    bolt.trailTint = BOLT_TINT;
-    bolt.trailCount = 3;
-    bolt.setVelocity(Math.cos(angle) * R.speed, Math.sin(angle) * R.speed);
-    bolt.setRotation(angle).setDepth(12).setBlendMode(Phaser.BlendModes.ADD);
-    bolt.startX = x;
-    bolt.startY = y;
-    bolt.maxRange = R.range;
-    bolt.pierced = new Set();
-
-    p.body.velocity.add(new Phaser.Math.Vector2().setToPolar(angle, -R.recoil));
-    sfx.shoot();
-    this.fx.hitSparks(x, y);
-    this.fx.shake(R.shake);
   }
 
   // Projectiles fizzle out at their max range or the world edge.
@@ -321,29 +170,53 @@ export class GameScene extends Phaser.Scene {
   }
 
   // Bolts pierce: each enemy is hit once, and every one already passed through adds damage.
+  // bolt.cfg is the shooter's tuning (see TUNING.classes.knight.ranged).
   onBoltHit(bolt, enemy) {
     if (!bolt.active || enemy.dying || bolt.pierced.has(enemy)) return;
     const now = this.time.now;
+    const R = bolt.cfg;
     const damage = R.damage + R.pierceBonus * bolt.pierced.size;
     bolt.pierced.add(enemy);
     const dir = bolt.body.velocity.clone().normalize();
-    this.fx.hitSparks(enemy.x - dir.x * enemy.radius, enemy.y - dir.y * enemy.radius);
     this.fx.shake(R.hitShake);
-    if (enemy.takeHit({ damage, dir, knockback: R.knockback, stunMs: R.stunMs, heavy: true }, now)) {
-      this.killEnemy(enemy);
+    if (this.strikeEnemy(enemy, { damage, dir, knockback: R.knockback, stunMs: R.stunMs, heavy: true }, now, 0.4)) {
       this.hitstop(R.killHitstopMs, bolt);
     } else {
       sfx.boltHit(enemy.x, enemy.y);
-      this.fx.flash(enemy);
-      this.fx.squash(enemy, 0.4);
       this.hitstop(R.hitstopMs, bolt, enemy);
     }
   }
 
-  // Nearest live enemy within reach (range + assist distance) and within assistDeg of the aim.
-  findSwingTarget(p, swing) {
-    const reach = swing.range + M.assistRange;
-    const cone = Phaser.Math.DegToRad(M.assistDeg);
+  // A player's attack landing on `enemy` (hit as in Enemy.takeHit): sparks where it struck, then the
+  // kill, or a flash and a squash by `squash`. Returns true if it killed.
+  strikeEnemy(enemy, hit, now, squash) {
+    const { dir } = hit;
+    this.fx.hitSparks(enemy.x - dir.x * enemy.radius, enemy.y - dir.y * enemy.radius);
+    if (enemy.takeHit(hit, now)) {
+      this.killEnemy(enemy);
+      return true;
+    }
+    this.fx.flash(enemy);
+    this.fx.squash(enemy, squash);
+    return false;
+  }
+
+  // Deletes every enemy bullet that `inArea(x, y, radius)` accepts, with a ping. Returns how many.
+  cutBullets(inArea) {
+    let cut = 0;
+    for (const bullet of [...this.enemyBullets.getChildren()]) {
+      if (!inArea(bullet.x, bullet.y, 7)) continue;
+      this.fx.hitSparks(bullet.x, bullet.y);
+      sfx.deflect(bullet.x, bullet.y);
+      bullet.destroy();
+      cut++;
+    }
+    return cut;
+  }
+
+  // Nearest live enemy within `reach` of the player (plus its radius) and within `deg` of the aim.
+  findTarget(p, reach, deg) {
+    const cone = Phaser.Math.DegToRad(deg);
     let best = null;
     for (const enemy of this.enemies.getChildren()) {
       if (enemy.dying) continue;
@@ -372,13 +245,7 @@ export class GameScene extends Phaser.Scene {
       const dir = new Phaser.Math.Vector2(enemy.x - x, enemy.y - y);
       if (dir.lengthSq() < 0.01) dir.setToPolar(Math.random() * Math.PI * 2);
       dir.normalize();
-      this.fx.hitSparks(enemy.x - dir.x * enemy.radius, enemy.y - dir.y * enemy.radius);
-      if (enemy.takeHit({ damage, dir, knockback, stunMs, heavy: true }, now)) {
-        this.killEnemy(enemy);
-      } else {
-        this.fx.flash(enemy);
-        this.fx.squash(enemy, 0.3);
-      }
+      this.strikeEnemy(enemy, { damage, dir, knockback, stunMs, heavy: true }, now, 0.3);
     }
   }
 
@@ -530,7 +397,7 @@ export class GameScene extends Phaser.Scene {
 
   updateHud(now) {
     this.hud.update(now, {
-      players: this.players.map((p) => ({ hp: p.hp, pips: p.pips })),
+      players: this.players.map((p) => ({ hp: p.hp, resource: p.kit.hudValue })),
       kills: this.kills,
       secs: Math.floor((now - this.startedAt) / 1000),
       muted: sfx.muted,
@@ -549,6 +416,6 @@ export class GameScene extends Phaser.Scene {
   }
 
   tryRestart() {
-    if (this.time.now - this.overAt > 500) this.scene.restart({ devices: this.devices });
+    if (this.time.now - this.overAt > 500) this.scene.restart({ devices: this.devices, classes: this.classes });
   }
 }

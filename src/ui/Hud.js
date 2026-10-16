@@ -18,17 +18,16 @@ const CHARGE_EMPTY = 0x3a2f45;
 const PLAYER_GAP = 12; // between players' hearts-and-charges blocks
 const LABEL_W = 24;    // room for the P1/P2 label in co-op
 const LABEL_COLORS = [0xf2c14e, 0x5ce1ff];
-const R = TUNING.ranged;
 
-// For each player, hearts (one per HP) with the shot charges under them; then a skull with the kill
-// count, the run timer, and the game-over screen.
+// For each player, hearts (one per HP) with their class's resource under them (see WIDGETS); then a
+// skull with the kill count, the run timer, and the game-over screen.
 export class Hud {
-  constructor(scene, maxHp, playerCount = 1) {
+  // classes: each player's class (see src/classes/), in HUD row order.
+  constructor(scene, maxHp, classes) {
     this.scene = scene;
+    const playerCount = classes.length;
     const labelled = playerCount > 1;
     const left = MARGIN + (labelled ? LABEL_W : 0);
-    const boltW = scene.textures.getFrame('bolt').width;
-    const boltH = scene.textures.getFrame('bolt').height;
 
     this.rows = [];
     let top = MARGIN;
@@ -44,20 +43,12 @@ export class Hud {
         hearts.push(this.fixed(heart.setScale(HEART_SCALE)));
       }
 
-      // One bolt per storable shot: a dark silhouette, with the bolt filling in from the tail as
-      // sword hits add pips.
-      const chargeTop = top + HEART_H * HEART_SCALE + 8;
-      const chargeY = chargeTop + boltH * CHARGE_SCALE / 2;
-      const charges = [];
-      for (let i = 0; i < R.maxCharges; i++) {
-        const x = left + (i * (boltW + CHARGE_GAP) + boltW / 2) * CHARGE_SCALE;
-        const empty = this.fixed(scene.add.image(x, chargeY, 'bolt').setScale(CHARGE_SCALE).setTintFill(CHARGE_EMPTY));
-        const fill = this.fixed(scene.add.image(x, chargeY, 'bolt').setScale(CHARGE_SCALE));
-        charges.push({ x, empty, fill, full: false });
-      }
+      const Kit = classes[p];
+      const resourceTop = top + HEART_H * HEART_SCALE + 8;
+      const resource = new WIDGETS[Kit.hud](this, left, resourceTop, TUNING.classes[Kit.id]);
 
-      this.rows.push({ hearts, shownHp: maxHp, charges });
-      top = chargeTop + boltH * CHARGE_SCALE + PLAYER_GAP;
+      this.rows.push({ hearts, shownHp: maxHp, resource });
+      top = resourceTop + resource.height + PLAYER_GAP;
     }
 
     // Skull placed by its visible pixels, with the count centered on it.
@@ -77,12 +68,12 @@ export class Hud {
     return obj.setScrollFactor(0).setDepth(DEPTH);
   }
 
-  // players: each player's { hp, pips }, in HUD row order.
+  // players: each player's { hp, resource } (resource is the class's hudValue), in HUD row order.
   update(now, { players, kills, secs, muted }) {
-    players.forEach(({ hp, pips }, p) => {
+    players.forEach(({ hp, resource }, p) => {
       const row = this.rows[p];
       this.updateHearts(row, Math.max(hp, 0), now);
-      this.updateCharges(row, pips);
+      row.resource.update(resource, now);
     });
     this.kills.setText(String(kills));
     this.timer.setText(`${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`);
@@ -98,36 +89,9 @@ export class Hud {
     if (hp === 1 && !last.popping) last.setScale(HEART_SCALE * (1 + 0.12 * Math.max(0, Math.sin(now / 110))));
   }
 
-  updateCharges(row, pips) {
-    row.charges.forEach((slot, i) => {
-      const frac = Phaser.Math.Clamp((pips - i * R.pipsPerCharge) / R.pipsPerCharge, 0, 1);
-      const { width, height } = slot.fill.frame;
-      slot.fill.setCrop(0, 0, Math.round(width * frac), height).setAlpha(frac < 1 ? 0.45 : 1);
-      const full = frac === 1;
-      if (full && !slot.full) {
-        slot.fill.setScale(CHARGE_SCALE * 1.5);
-        this.scene.tweens.add({ targets: slot.fill, scale: CHARGE_SCALE, duration: 220, ease: 'Back.easeOut' });
-      }
-      slot.full = full;
-    });
-  }
-
-  // Rattle a player's charge slots when they try to shoot with none.
-  shakeCharges(playerIndex) {
-    for (const slot of this.rows[playerIndex].charges) {
-      const targets = [slot.empty, slot.fill];
-      this.scene.tweens.killTweensOf(targets);
-      for (const t of targets) t.setX(slot.x).setScale(CHARGE_SCALE); // also ends a fill pop cut short
-      slot.empty.setTintFill(BLOOD[3]);
-      this.scene.tweens.add({
-        targets,
-        x: slot.x + 4,
-        duration: 35,
-        yoyo: true,
-        repeat: 2,
-        onComplete: () => slot.empty.setTintFill(CHARGE_EMPTY),
-      });
-    }
+  // Rattle a player's resource when they try to use it without enough.
+  shakeResource(playerIndex) {
+    this.rows[playerIndex].resource.shake();
   }
 
   loseHeart(heart) {
@@ -164,3 +128,60 @@ export class Hud {
     scene.tweens.add({ targets: hint, alpha: 0.3, duration: 600, yoyo: true, repeat: -1 });
   }
 }
+
+// One bolt per storable shot (TUNING.classes.knight.ranged): a dark silhouette, with the bolt filling
+// in from the tail as sword hits add pips. Shows the knight's pips.
+class Charges {
+  constructor(hud, left, top, cfg) {
+    const scene = hud.scene;
+    this.scene = scene;
+    this.cfg = cfg.ranged;
+    const boltW = scene.textures.getFrame('bolt').width;
+    const boltH = scene.textures.getFrame('bolt').height;
+    this.height = boltH * CHARGE_SCALE;
+    const y = top + boltH * CHARGE_SCALE / 2;
+    this.slots = [];
+    for (let i = 0; i < this.cfg.maxCharges; i++) {
+      const x = left + (i * (boltW + CHARGE_GAP) + boltW / 2) * CHARGE_SCALE;
+      const empty = hud.fixed(scene.add.image(x, y, 'bolt').setScale(CHARGE_SCALE).setTintFill(CHARGE_EMPTY));
+      const fill = hud.fixed(scene.add.image(x, y, 'bolt').setScale(CHARGE_SCALE));
+      this.slots.push({ x, empty, fill, full: false });
+    }
+  }
+
+  update(pips) {
+    const per = this.cfg.pipsPerCharge;
+    this.slots.forEach((slot, i) => {
+      const frac = Phaser.Math.Clamp((pips - i * per) / per, 0, 1);
+      const { width, height } = slot.fill.frame;
+      slot.fill.setCrop(0, 0, Math.round(width * frac), height).setAlpha(frac < 1 ? 0.45 : 1);
+      const full = frac === 1;
+      if (full && !slot.full) {
+        slot.fill.setScale(CHARGE_SCALE * 1.5);
+        this.scene.tweens.add({ targets: slot.fill, scale: CHARGE_SCALE, duration: 220, ease: 'Back.easeOut' });
+      }
+      slot.full = full;
+    });
+  }
+
+  shake() {
+    for (const slot of this.slots) {
+      const targets = [slot.empty, slot.fill];
+      this.scene.tweens.killTweensOf(targets);
+      for (const t of targets) t.setX(slot.x).setScale(CHARGE_SCALE); // also ends a fill pop cut short
+      slot.empty.setTintFill(BLOOD[3]);
+      this.scene.tweens.add({
+        targets,
+        x: slot.x + 4,
+        duration: 35,
+        yoyo: true,
+        repeat: 2,
+        onComplete: () => slot.empty.setTintFill(CHARGE_EMPTY),
+      });
+    }
+  }
+}
+
+// HUD resource widgets by name, as a class's static `hud` picks them. Each is built with
+// (hud, left, top, classTuning), has a `height`, and update(value, now) and shake() methods.
+const WIDGETS = { charges: Charges };

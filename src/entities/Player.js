@@ -6,22 +6,23 @@ import { Shadow } from './Shadow.js';
 import { isFrozen } from './hitstop.js';
 
 const T = TUNING.player;
-const D = TUNING.dash;
 
-// The knight frame is 16x28 art pixels. The hit circle covers its lower body, and the origin sits at
+// The hero frames are 16x28 art pixels. The hit circle covers the lower body, and the origin sits at
 // the circle's center so x/y mean the same thing they did for the old round placeholder.
 const BODY_CENTER = { x: 8, y: 21 };
 const HAND = { x: 3, y: -2 };   // art pixels from BODY_CENTER, facing right
 const RUN_MIN_SPEED = 20;       // px/s; slower than this shows the idle loop
 
-// The sword rests this far to one side of the aim and sweeps to the other side on each swing.
-const SWORD_REST = Phaser.Math.DegToRad(65);
-const SWORD_SWING_MS = { normal: 70, finisher: 95 };
-const SWORD_SETTLE = 18;        // how fast it eases back to rest (per second, exponential)
+// The weapon rests this far to one side of the aim and sweeps to the other side on each swing.
+const WEAPON_REST = Phaser.Math.DegToRad(65);
+const WEAPON_SETTLE = 18;       // how fast it eases back to rest (per second, exponential)
 
+// One player's body: movement, health, the dash, and the art. What the buttons do is up to its class
+// (see src/classes/), which is created with the player as `kit`.
 export class Player extends Phaser.Physics.Arcade.Sprite {
-  // hero: which character art to use, 'knight_m' or 'knight_f'. controls: what drives this player.
-  constructor(scene, x, y, { hero = 'knight_m', controls }) {
+  // hero: which character art to use, e.g. 'knight_m'. weapon: { frame, originY } of the held weapon's
+  // art, pointing up with the grip at originY. controls: what drives this player.
+  constructor(scene, x, y, { hero, weapon, controls }) {
     super(scene, x, y, 'dungeon', `${hero}_idle_anim_f0`);
     this.hero = hero;
     this.controls = controls;
@@ -41,24 +42,18 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.aimAngle = 0;
     this.invulnUntil = 0;
     this.stunUntil = 0;
-    this.nextAttackAt = 0;
-    this.nextShotAt = 0;
-    this.pips = TUNING.ranged.startCharges * TUNING.ranged.pipsPerCharge; // shot charge, see TUNING.ranged
-    this.comboIndex = 0;
-    this.comboExpiresAt = 0;
     this.stepLeft = 0; // seconds of attack step remaining, only counts down while unfrozen
     this.stepVel = new Phaser.Math.Vector2();
     this.dashLeft = 0; // seconds, like stepLeft
     this.dashVel = new Phaser.Math.Vector2();
     this.nextDashAt = 0;
+    this.dashExitSpeed = 0;
     this.dashInvulnUntil = 0;
-    this.nextGhostAt = 0;
-    this.dashWasReady = true;
 
-    this.sword = scene.add.image(x, y, 'dungeon', 'weapon_knight_sword').setScale(ART_SCALE).setOrigin(0.5, 0.8);
-    this.swordSide = -1;    // which side of the aim it rests on: -1 or 1
-    this.swordAngle = -SWORD_REST;
-    this.swordSwing = null; // { from, to, startedAt, ms } while a swing is playing
+    this.weapon = scene.add.image(x, y, 'dungeon', weapon.frame).setScale(ART_SCALE).setOrigin(0.5, weapon.originY);
+    this.weaponSide = -1;    // which side of the aim it rests on: -1 or 1
+    this.weaponAngle = -WEAPON_REST;
+    this.weaponSwing = null; // { from, to, startedAt, ms } while a swing is playing
     this.lastSyncAt = scene.time.now;
   }
 
@@ -68,7 +63,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     if (this.dashLeft > 0) {
       this.dashLeft -= dt;
       if (this.dashLeft > 0) vel.copy(this.dashVel);
-      else vel.copy(this.dashVel).setLength(D.exitSpeed);
+      else vel.copy(this.dashVel).setLength(this.dashExitSpeed);
       return;
     }
     if (this.stepLeft > 0) {
@@ -110,12 +105,19 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     return !this.isDashing && now >= this.nextDashAt && now >= this.stunUntil;
   }
 
-  dash(angle, now) {
+  // cfg: { distance, durationMs, cooldownMs, invulnGraceMs, exitSpeed }, see TUNING.classes.knight.dash.
+  dash(angle, now, cfg) {
     this.stepLeft = 0;
-    this.dashLeft = D.durationMs / 1000;
-    this.dashVel.setToPolar(angle, D.distance / this.dashLeft);
-    this.nextDashAt = now + D.durationMs + D.cooldownMs;
-    this.dashInvulnUntil = now + D.durationMs + D.invulnGraceMs;
+    this.dashLeft = cfg.durationMs / 1000;
+    this.dashVel.setToPolar(angle, cfg.distance / this.dashLeft);
+    this.dashExitSpeed = cfg.exitSpeed;
+    this.nextDashAt = now + cfg.durationMs + cfg.cooldownMs;
+    this.dashInvulnUntil = now + cfg.durationMs + cfg.invulnGraceMs;
+  }
+
+  // Ends a dash right away, keeping the current velocity.
+  stopDash() {
+    this.dashLeft = 0;
   }
 
   hurt(damage, dir, now, knockback = T.hurtKnockback) {
@@ -131,16 +133,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     return now < this.invulnUntil || now < this.dashInvulnUntil;
   }
 
-  // Sweep the sword across the swing's arc, the same way the slash effect is drawn.
-  swingSword(angle, swing, now) {
-    const half = Phaser.Math.DegToRad(swing.arcDeg) / 2;
-    this.swordSwing = {
-      from: angle - half * swing.sweep,
-      to: angle + half * swing.sweep,
-      startedAt: now,
-      ms: swing.finisher ? SWORD_SWING_MS.finisher : SWORD_SWING_MS.normal,
-    };
-    this.swordSide = swing.sweep;
+  // Sweep the weapon from one angle to another over `ms`, then let it settle at rest on `side` of the
+  // aim (-1 or 1).
+  swingWeapon(from, to, ms, side, now) {
+    this.weaponSwing = { from, to, startedAt: now, ms };
+    this.weaponSide = side;
   }
 
   syncVisuals(now) {
@@ -153,8 +150,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.setFlipX(Math.cos(this.aimAngle) < 0);
     this.setDepth(ySortDepth(this.y));
     this.syncAnimation(now);
-    this.syncSword(now, dt);
-    this.sword.setAlpha(this.alpha);
+    this.syncWeapon(now, dt);
+    this.weapon.setAlpha(this.alpha);
   }
 
   syncAnimation(now) {
@@ -174,27 +171,27 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
   }
 
-  syncSword(now, dt) {
+  syncWeapon(now, dt) {
     const facing = this.flipX ? -1 : 1;
-    this.sword.setPosition(
+    this.weapon.setPosition(
       this.x + HAND.x * facing * ART_SCALE,
       this.y + HAND.y * ART_SCALE,
     );
 
-    const swing = this.swordSwing;
+    const swing = this.weaponSwing;
     if (swing) {
       const t = Math.min((now - swing.startedAt) / swing.ms, 1);
-      this.swordAngle = swing.from + (swing.to - swing.from) * Phaser.Math.Easing.Cubic.Out(t);
-      if (t >= 1) this.swordSwing = null;
+      this.weaponAngle = swing.from + (swing.to - swing.from) * Phaser.Math.Easing.Cubic.Out(t);
+      if (t >= 1) this.weaponSwing = null;
     } else {
-      const rest = this.aimAngle + this.swordSide * SWORD_REST;
-      const diff = Phaser.Math.Angle.Wrap(rest - this.swordAngle);
-      this.swordAngle += diff * Math.min(1, SWORD_SETTLE * dt);
+      const rest = this.aimAngle + this.weaponSide * WEAPON_REST;
+      const diff = Phaser.Math.Angle.Wrap(rest - this.weaponAngle);
+      this.weaponAngle += diff * Math.min(1, WEAPON_SETTLE * dt);
     }
 
-    // The art points up, so add a quarter turn. Pointing away from the camera, it goes behind the knight.
-    this.sword.setRotation(this.swordAngle + Math.PI / 2);
-    this.sword.setDepth(this.depth + (Math.sin(this.swordAngle) < -0.2 ? -0.0001 : 0.0001));
+    // The art points up, so add a quarter turn. Pointing away from the camera, it goes behind the hero.
+    this.weapon.setRotation(this.weaponAngle + Math.PI / 2);
+    this.weapon.setDepth(this.depth + (Math.sin(this.weaponAngle) < -0.2 ? -0.0001 : 0.0001));
   }
 
   // Grey out and freeze on death. The body goes too, so nothing hits or targets the corpse.
@@ -205,6 +202,6 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.anims.stop();
     this.setFrame(`${this.hero}_hit_anim_f0`);
     this.setAlpha(1).setTint(0x555566);
-    this.sword.setAlpha(1).setTint(0x555566);
+    this.weapon.setAlpha(1).setTint(0x555566);
   }
 }

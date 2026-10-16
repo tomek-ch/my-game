@@ -22,66 +22,73 @@ export const TUNING = {
     stunFriction: 9,      // how fast knockback bleeds off (exponential, per second)
   },
 
-  dash: {
-    distance: 150,
-    durationMs: 130,
-    cooldownMs: 550,      // counted from the end of the dash
-    bufferMs: 120,
-    invulnGraceMs: 60,    // stay untouchable this long after the dash ends
-    exitSpeed: 260,       // speed you come out of the dash with (player maxSpeed = seamless run)
-    ghostIntervalMs: 18,  // afterimage spacing
-  },
-
-  // A heavy bolt that costs a charge. Charges are earned with the sword, one pip at a time, and
-  // don't decay. Bolts pierce, hitting each enemy once.
-  ranged: {
-    pipsPerCharge: 3,     // a shot costs this many pips
-    maxCharges: 2,        // shots that can be stored
-    startCharges: 1,
-    hitPips: 1,           // per enemy hit by a swing, finisher included
-    cooldownMs: 300,
-    bufferMs: 120,
-    speed: 580,
-    range: 700,           // bolt fizzles after travelling this far
-    damage: 3,
-    pierceBonus: 1,       // extra damage for each enemy the bolt already went through
-    knockback: 520,
-    stunMs: 400,          // also staggers a brute, like a finisher
-    recoil: 220,          // pushes the player backward per shot
-    hitstopMs: 50,
-    killHitstopMs: 70,
-    shake: { duration: 90, intensity: 0.006 },
-    hitShake: { duration: 80, intensity: 0.005 },
-  },
-
-  melee: {
-    bufferMs: 180,        // a click this early before the next swing is allowed still counts
-    comboWindowMs: 450,   // after a swing's recovery, how long you have to continue the chain
-    comboCooldownMs: 380, // extra wait after the finisher
-    assistRange: 60,      // look this far past swing range for an enemy to step toward
-    assistDeg: 35,        // swing bends toward that enemy if it's within this angle of the mouse
-    stepMs: 70,           // duration of the forward step on each swing
-    stepGap: 6,           // the step stops this far short of touching the target
-    killHitstopBonusMs: 25,
-
-    // One entry per hit of the combo. sweep: 1 / -1 is which way the slash is drawn.
-    swings: [
-      {
-        damage: 1, range: 72, arcDeg: 115, knockback: 230, recoveryMs: 190,
-        step: 12, maxStep: 50, hitstopMs: 45, sweep: 1, finisher: false,
-        shake: { duration: 70, intensity: 0.003 },
+  // Each playable class's own numbers, by class id (see src/classes/). Movement and health above are
+  // shared by all of them.
+  classes: {
+    // Sword combo, a dash, and heavy bolts charged by sword hits.
+    knight: {
+      dash: {
+        distance: 150,
+        durationMs: 130,
+        cooldownMs: 550,      // counted from the end of the dash
+        bufferMs: 120,
+        invulnGraceMs: 60,    // stay untouchable this long after the dash ends
+        exitSpeed: 260,       // speed you come out of the dash with (player maxSpeed = seamless run)
+        ghostIntervalMs: 18,  // afterimage spacing
       },
-      {
-        damage: 1, range: 72, arcDeg: 115, knockback: 230, recoveryMs: 190,
-        step: 12, maxStep: 50, hitstopMs: 45, sweep: -1, finisher: false,
-        shake: { duration: 70, intensity: 0.003 },
+
+      // A heavy bolt that costs a charge. Charges are earned with the sword, one pip at a time, and
+      // don't decay. Bolts pierce, hitting each enemy once.
+      ranged: {
+        pipsPerCharge: 3,     // a shot costs this many pips
+        maxCharges: 2,        // shots that can be stored
+        startCharges: 1,
+        hitPips: 1,           // per enemy hit by a swing, finisher included
+        cooldownMs: 300,
+        bufferMs: 120,
+        speed: 580,
+        range: 700,           // bolt fizzles after travelling this far
+        damage: 3,
+        pierceBonus: 1,       // extra damage for each enemy the bolt already went through
+        knockback: 520,
+        stunMs: 400,          // also staggers a brute, like a finisher
+        recoil: 220,          // pushes the player backward per shot
+        hitstopMs: 50,
+        killHitstopMs: 70,
+        shake: { duration: 90, intensity: 0.006 },
+        hitShake: { duration: 80, intensity: 0.005 },
       },
-      {
-        damage: 2, range: 88, arcDeg: 170, knockback: 680, recoveryMs: 240,
-        step: 20, maxStep: 70, hitstopMs: 90, sweep: 1, finisher: true,
-        shake: { duration: 140, intensity: 0.009 },
+
+      melee: {
+        bufferMs: 180,        // a click this early before the next swing is allowed still counts
+        comboWindowMs: 450,   // after a swing's recovery, how long you have to continue the chain
+        comboCooldownMs: 380, // extra wait after the finisher
+        assistRange: 60,      // look this far past swing range for an enemy to step toward
+        assistDeg: 35,        // swing bends toward that enemy if it's within this angle of the mouse
+        stepMs: 70,           // duration of the forward step on each swing
+        stepGap: 6,           // the step stops this far short of touching the target
+        killHitstopBonusMs: 25,
+
+        // One entry per hit of the combo. sweep: 1 / -1 is which way the slash is drawn.
+        swings: [
+          {
+            damage: 1, range: 72, arcDeg: 115, knockback: 230, recoveryMs: 190,
+            step: 12, maxStep: 50, hitstopMs: 45, sweep: 1, finisher: false,
+            shake: { duration: 70, intensity: 0.003 },
+          },
+          {
+            damage: 1, range: 72, arcDeg: 115, knockback: 230, recoveryMs: 190,
+            step: 12, maxStep: 50, hitstopMs: 45, sweep: -1, finisher: false,
+            shake: { duration: 70, intensity: 0.003 },
+          },
+          {
+            damage: 2, range: 88, arcDeg: 170, knockback: 680, recoveryMs: 240,
+            step: 20, maxStep: 70, hitstopMs: 90, sweep: 1, finisher: true,
+            shake: { duration: 140, intensity: 0.009 },
+          },
+        ],
       },
-    ],
+    },
   },
 
   // Shared fields: radius, hp, maxSpeed, accel, stunMs (how long a normal hit stuns; stunned enemies

@@ -4,15 +4,15 @@ import { addDungeon } from '../world/dungeon.js';
 import { pixelText } from '../ui/pixelFont.js';
 import { BLOOD } from '../textures.js';
 import { PAD } from '../input/controls.js';
+import { CLASSES } from '../classes/index.js';
 
 const UI = 3; // screen pixels per font pixel for the control rows
 const KEY_COLOR = 0xf2c14e;
 const PAD_COLOR = 0x5ce1ff;
-const ACTIONS = ['Move', 'Aim', 'Dash', 'Melee', 'Shot - sword hits charge it'];
-// The controls list shows one device at a time: its inputs, in ACTIONS order.
+// The controls list shows one device at a time: the class's actions with that device's inputs.
 const VIEWS = {
-  kbm: { tab: 'Keyboard', color: KEY_COLOR, inputs: ['WSAD', 'Mouse', 'Space', 'Left click', 'Right click'] },
-  pad: { tab: 'Gamepad', color: PAD_COLOR, inputs: ['Left stick', 'Right stick', 'RT / A', 'RB', 'LB'] },
+  kbm: { tab: 'Keyboard', color: KEY_COLOR },
+  pad: { tab: 'Gamepad', color: PAD_COLOR },
 };
 const INPUT_RIGHT = 480; // inputs are right-aligned to here, actions left-aligned after a gap
 const ACTION_LEFT = 520;
@@ -47,7 +47,8 @@ export class StartScene extends Phaser.Scene {
     };
     for (const tab of Object.values(this.tabs)) tab.setInteractive({ useHandCursor: true });
     pixelText(this, cx, 300, '/', 2).setOrigin(0.5).setAlpha(0.4);
-    this.inputRows = ACTIONS.map((action, i) => {
+    this.kit = CLASSES.knight;
+    this.inputRows = this.kit.controls.map(({ action }, i) => {
       const y = 335 + i * 42;
       pixelText(this, ACTION_LEFT, y, action, UI);
       return pixelText(this, INPUT_RIGHT, y, '', UI).setOrigin(1, 0);
@@ -100,8 +101,8 @@ export class StartScene extends Phaser.Scene {
 
   showView(view) {
     this.view = view;
-    const { color, inputs } = VIEWS[view];
-    this.inputRows.forEach((row, i) => row.setText(inputs[i].toUpperCase()).setTint(color));
+    const { color } = VIEWS[view];
+    this.inputRows.forEach((row, i) => row.setText(this.kit.controls[i][view].toUpperCase()).setTint(color));
     for (const [name, tab] of Object.entries(this.tabs)) {
       if (name === view) tab.setTint(VIEWS[name].color).setAlpha(1);
       else tab.clearTint().setAlpha(0.4);
