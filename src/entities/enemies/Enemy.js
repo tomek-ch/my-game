@@ -3,6 +3,7 @@ import { TUNING } from '../../tuning.js';
 import { ART_SCALE, ENEMY_ART } from '../../art.js';
 import { ySortDepth } from '../depth.js';
 import { Shadow } from '../Shadow.js';
+import { isFrozen } from '../hitstop.js';
 
 // Base enemy: walks at its target, the nearest player. Subclasses override think() and use enter()/stateT for simple
 // state machines. stateT counts seconds of unfrozen time, so hitstop doesn't eat telegraphs.
@@ -155,6 +156,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.shadow.sync();
     this.setFlipX(Math.cos(this.facing) < 0);
     this.setDepth(ySortDepth(this.y));
+    if (isFrozen(this, this.scene.time.now)) return; // animation paused until the hitstop ends
     const speed = this.body.velocity.length();
     const moving = speed >= RUN_MIN_SPEED;
     this.play(`${this.art.monster}_${moving ? 'run' : 'idle'}`, true);

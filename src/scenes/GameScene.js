@@ -10,6 +10,7 @@ import { Fx } from '../fx.js';
 import { sfx } from '../audio/sfx.js';
 import { BOLT_TINT } from '../textures.js';
 import { createControls } from '../input/controls.js';
+import { freeze, isFrozen, thaw } from '../entities/hitstop.js';
 
 const M = TUNING.melee;
 const D = TUNING.dash;
@@ -72,7 +73,7 @@ export class GameScene extends Phaser.Scene {
     this.input.keyboard.on('keydown-R', () => this.isOver && this.tryRestart());
     this.input.gamepad.on('down', () => this.isOver && this.tryRestart());
 
-    this.hitstopUntil = 0;
+    this.frozen = new Set(); // sprites in hitstop, see hitstop.js
     this.kills = 0;
     this.startedAt = this.time.now;
     this.isOver = false;
@@ -89,12 +90,11 @@ export class GameScene extends Phaser.Scene {
     if (this.isOver) return;
     const now = this.time.now;
 
-    // Hitstop: everything freezes for a few frames when a hit lands.
-    if (now < this.hitstopUntil) return;
-    if (this.physics.world.isPaused) this.physics.world.resume();
+    this.thawFrozen(now);
 
     const dt = Math.min(delta, 50) / 1000;
     for (const p of this.livingPlayers()) {
+      if (isFrozen(p, now)) continue; // buffered presses wait for the hitstop to end
       const c = p.controls;
       c.update(p);
       if (c.aimAngle !== null) p.aimAngle = c.aimAngle;
@@ -109,7 +109,7 @@ export class GameScene extends Phaser.Scene {
 
     for (const enemy of this.enemies.getChildren()) {
       if (this.isOver) break; // the last player can fall to an enemy earlier in this loop
-      if (enemy.dying) continue;
+      if (enemy.dying || isFrozen(enemy, now)) continue;
       enemy.tick(dt, now);
     }
 
@@ -193,6 +193,7 @@ export class GameScene extends Phaser.Scene {
     const halfArc = Phaser.Math.DegToRad(swing.arcDeg) / 2;
     let hits = 0;
     let kills = 0;
+    const struck = [];
 
     const inSwing = (x, y, radius) => {
       const dist = Phaser.Math.Distance.Between(ox, oy, x, y);
@@ -224,12 +225,13 @@ export class GameScene extends Phaser.Scene {
       } else {
         this.fx.flash(enemy);
         this.fx.squash(enemy, swing.finisher ? 0.45 : 0.3);
+        struck.push(enemy);
       }
     }
 
     if (hits > kills) sfx.hit(swing.finisher);
     if (hits > 0) {
-      this.hitstop(swing.hitstopMs + (kills > 0 ? M.killHitstopBonusMs : 0));
+      this.hitstop(swing.hitstopMs + (kills > 0 ? M.killHitstopBonusMs : 0), p, ...struck);
       this.fx.shake(swing.shake);
     }
     this.gainPips(p, hits * R.hitPips);
@@ -283,7 +285,9 @@ export class GameScene extends Phaser.Scene {
   // Projectiles fizzle out at their max range or the world edge.
   updateProjectiles(group) {
     const { width: W, height: H } = TUNING.world;
+    const now = this.time.now;
     for (const shot of [...group.getChildren()]) {
+      if (isFrozen(shot, now)) continue;
       const travelled = Phaser.Math.Distance.Between(shot.startX, shot.startY, shot.x, shot.y);
       const outside = shot.x < 0 || shot.y < 0 || shot.x > W || shot.y > H;
       if (travelled < shot.maxRange && !outside) {
@@ -327,12 +331,12 @@ export class GameScene extends Phaser.Scene {
     this.fx.shake(R.hitShake);
     if (enemy.takeHit({ damage, dir, knockback: R.knockback, stunMs: R.stunMs, heavy: true }, now)) {
       this.killEnemy(enemy);
-      this.hitstop(R.killHitstopMs);
+      this.hitstop(R.killHitstopMs, bolt);
     } else {
       sfx.boltHit(enemy.x, enemy.y);
       this.fx.flash(enemy);
       this.fx.squash(enemy, 0.4);
-      this.hitstop(R.hitstopMs);
+      this.hitstop(R.hitstopMs, bolt, enemy);
     }
   }
 
@@ -461,18 +465,19 @@ export class GameScene extends Phaser.Scene {
     const contact = enemy.contact(this.time.now);
     if (!contact) return;
     const dir = new Phaser.Math.Vector2(player.x - enemy.x, player.y - enemy.y).normalize();
-    if (this.damagePlayer(player, contact.damage, dir, contact.knockback)) {
+    if (this.damagePlayer(player, contact.damage, dir, contact.knockback, enemy)) {
       enemy.knock(dir.clone().negate(), TUNING.player.hurtKnockback * 0.6, this.time.now);
     }
   }
 
-  // Returns false if the player couldn't be hurt right now.
-  damagePlayer(player, damage, dir, knockback) {
+  // Returns false if the player couldn't be hurt right now. `source` is the enemy that landed the
+  // hit, if any, and shares the player's hitstop.
+  damagePlayer(player, damage, dir, knockback, source = null) {
     const now = this.time.now;
     if (this.isOver || !player.alive || player.isInvulnerable(now)) return false;
     player.hurt(damage, dir, now, knockback);
 
-    this.hitstop(TUNING.hurtFx.hitstopMs);
+    this.hitstop(TUNING.hurtFx.hitstopMs, player, source);
     this.fx.shake(TUNING.hurtFx.shake);
     this.cameras.main.flash(120, 120, 20, 40);
 
@@ -493,9 +498,22 @@ export class GameScene extends Phaser.Scene {
     if (this.livingPlayers().length === 0) this.gameOver();
   }
 
-  hitstop(ms) {
-    this.hitstopUntil = Math.max(this.hitstopUntil, this.time.now + ms);
-    this.physics.world.pause();
+  // Freezes just these sprites (nulls are skipped) for `ms`; everything else carries on.
+  hitstop(ms, ...sprites) {
+    const until = this.time.now + ms;
+    for (const sprite of sprites) {
+      if (!sprite) continue;
+      freeze(sprite, until);
+      this.frozen.add(sprite);
+    }
+  }
+
+  thawFrozen(now) {
+    for (const sprite of this.frozen) {
+      if (sprite.active && isFrozen(sprite, now)) continue;
+      if (sprite.active) thaw(sprite);
+      this.frozen.delete(sprite);
+    }
   }
 
   // Solo with the mouse, the camera leans toward where you aim. In co-op it stays on the middle.

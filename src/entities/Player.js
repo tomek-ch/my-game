@@ -3,6 +3,7 @@ import { TUNING } from '../tuning.js';
 import { ySortDepth } from './depth.js';
 import { ART_SCALE } from '../art.js';
 import { Shadow } from './Shadow.js';
+import { isFrozen } from './hitstop.js';
 
 const T = TUNING.player;
 const D = TUNING.dash;
@@ -162,6 +163,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.setFrame(`${this.hero}_hit_anim_f0`);
       return;
     }
+    if (isFrozen(this, now)) return; // paused until the hitstop ends
     const speed = this.body.velocity.length();
     if (speed < RUN_MIN_SPEED) {
       this.play(`${this.hero}_idle`, true);

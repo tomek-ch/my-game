@@ -153,7 +153,7 @@ export class Brute extends Enemy {
     for (const player of scene.livingPlayers()) {
       if (!this.inSwing(player.x, player.y, TUNING.player.radius)) continue;
       const dir = new Phaser.Math.Vector2(player.x - this.x, player.y - this.y).normalize();
-      scene.damagePlayer(player, a.damage, dir, a.knockback);
+      scene.damagePlayer(player, a.damage, dir, a.knockback, this);
     }
     this.enter('recover');
   }
@@ -183,7 +183,7 @@ export class Brute extends Enemy {
       if (!inSlam(player.x, player.y, TUNING.player.radius)) continue;
       const dir = new Phaser.Math.Vector2(player.x - this.x, player.y - this.y);
       if (dir.lengthSq() < 0.01) dir.setToPolar(this.facing);
-      scene.damagePlayer(player, j.damage, dir.normalize(), j.knockback);
+      scene.damagePlayer(player, j.damage, dir.normalize(), j.knockback, this);
     }
     this.enter('landed');
   }
