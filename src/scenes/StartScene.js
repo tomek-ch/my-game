@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { TUNING } from '../tuning.js';
 import { addDungeon } from '../world/dungeon.js';
 import { pixelText } from '../ui/pixelFont.js';
+import { Button } from '../ui/Button.js';
 import { BLOOD } from '../textures.js';
 import { PAD } from '../input/controls.js';
 import { CLASSES, CLASS_IDS } from '../classes/index.js';
@@ -20,10 +21,18 @@ const INPUT_RIGHT = 480; // inputs are right-aligned to here, actions left-align
 const ACTION_LEFT = 520;
 const MAX_ROWS = Math.max(...Object.values(CLASSES).map((Kit) => Kit.controls.length));
 const PICKER_ARROW_X = 170; // the < > arrows sit this far either side of the class name
-const PREV_KEYS = ['ArrowLeft', 'a', 'A'];
-const NEXT_KEYS = ['ArrowRight', 'd', 'D'];
-const PAD_PREV = [14, 4]; // d-pad left, LB
-const PAD_NEXT = [15, 5]; // d-pad right, RB
+const BUTTON_Y = 650;
+const BUTTON_GAP = 24;
+const KEY_STEPS = {
+  ArrowLeft: [-1, 0], a: [-1, 0], A: [-1, 0],
+  ArrowRight: [1, 0], d: [1, 0], D: [1, 0],
+  ArrowUp: [0, -1], w: [0, -1], W: [0, -1],
+  ArrowDown: [0, 1], s: [0, 1], S: [0, 1],
+};
+const CONFIRM_KEYS = ['Enter', ' '];
+const PAD_STEPS = { 14: [-1, 0], 15: [1, 0], 12: [0, -1], 13: [0, 1] }; // the d-pad
+const PAD_CLASS_STEPS = { 4: -1, 5: 1 }; // LB / RB pick the class wherever the focus is
+const PAD_CONFIRM = 0; // A
 
 // ?join=<code> joins that online room straight away, once (not again on coming back to the title).
 let joinFromUrl = new URLSearchParams(location.search).get('join');
@@ -32,13 +41,15 @@ const deviceName = (device) => (device === 'kbm' ? 'Keyboard + mouse' : `Gamepad
 
 // The title screen: a class picker, and that class's controls over a dimmed dungeon, for a gamepad if
 // one is connected and for the keyboard and mouse otherwise; Tab, X or clicking a tab switches between
-// them by hand. Left / right (arrows, A / D, the d-pad, LB / RB, or clicking the arrows) picks the
-// class. A click or another key starts a solo run on keyboard and mouse, A on a gamepad a solo run on
-// that gamepad. 2 or Y opens co-op: that device is player 1 with the class picked so far, the picker
-// moves on to player 2's class, and the run starts when a second device joins (another gamepad, or the
-// keyboard and mouse). Open the game with ?class=berserker to start on that class.
-// Online co-op (a first spike, see src/net/): H hosts a room on the keyboard and mouse and shows its
-// code; J asks for a code and joins that room as player 2 with the class picked here.
+// them by hand. Below them, buttons: Play, Local co-op, Host online and Join online. Nothing starts but
+// a button. The mouse clicks them; the keys (arrows or WSAD, Enter or Space) and the d-pad and A move a
+// focus between the class picker and the buttons and press the focused one. Left / right on the picker,
+// clicking its arrows or LB / RB pick the class. The device that presses a button is player 1.
+// Local co-op: player 1 keeps the class picked so far, the picker moves on to player 2's class, and the
+// run starts when a second device joins: A on another gamepad, or the keyboard and mouse's own button.
+// Open the game with ?class=berserker to start on that class.
+// Online co-op (a first spike, see src/net/): Host opens a room and shows its code; Join asks for a
+// code and joins that room as player 2 on the keyboard and mouse, with the class picked here.
 export class StartScene extends Phaser.Scene {
   constructor() {
     super('start');
@@ -61,14 +72,20 @@ export class StartScene extends Phaser.Scene {
       pixelText(this, cx - PICKER_ARROW_X, 232, '<', 4).setOrigin(0.5),
       pixelText(this, cx + PICKER_ARROW_X, 232, '>', 4).setOrigin(0.5),
     ];
-    for (const arrow of this.arrows) arrow.setInteractive({ useHandCursor: true }).setAlpha(0.6);
+    this.arrows.forEach((arrow, i) => {
+      arrow.setInteractive({ useHandCursor: true });
+      arrow.on('pointerdown', (pointer) => pointer.button === 0 && this.cycleClass('kbm', i === 0 ? -1 : 1));
+    });
 
     pixelText(this, cx, 282, 'Controls', 4).setOrigin(0.5).setTint(BLOOD[3]);
     this.tabs = {
       kbm: pixelText(this, cx - 20, 320, VIEWS.kbm.tab, 2).setOrigin(1, 0.5),
       pad: pixelText(this, cx + 20, 320, VIEWS.pad.tab, 2).setOrigin(0, 0.5),
     };
-    for (const tab of Object.values(this.tabs)) tab.setInteractive({ useHandCursor: true });
+    for (const [view, tab] of Object.entries(this.tabs)) {
+      tab.setInteractive({ useHandCursor: true });
+      tab.on('pointerdown', (pointer) => pointer.button === 0 && this.pickView(view));
+    }
     pixelText(this, cx, 320, '/', 2).setOrigin(0.5).setAlpha(0.4);
     this.rows = Array.from({ length: MAX_ROWS }, (_, i) => {
       const y = 350 + i * 40;
@@ -90,49 +107,49 @@ export class StartScene extends Phaser.Scene {
     this.input.gamepad.on('connected', followPads);
     this.input.gamepad.on('disconnected', followPads);
 
-    const blink = (text) => {
-      this.tweens.add({ targets: text, alpha: 0.3, duration: 600, yoyo: true, repeat: -1 });
-      return text;
+    this.statusTop = pixelText(this, cx, BUTTON_Y - 90, '', 2).setOrigin(0.5).setTint(KEY_COLOR);
+    this.statusBottom = pixelText(this, cx, BUTTON_Y - 60, '', 2).setOrigin(0.5).setTint(PAD_COLOR);
+    this.tweens.add({ targets: this.statusBottom, alpha: 0.3, duration: 600, yoyo: true, repeat: -1 });
+
+    const button = (label, onPress) => {
+      const b = new Button(this, label, { color: KEY_COLOR, onPress, onHover: () => this.focusButton(b) });
+      return b;
     };
-    this.titleHints = [
-      blink(pixelText(this, cx, height - 110, 'Click, press a key or A on a gamepad to start', 2).setOrigin(0.5)),
-      pixelText(this, cx, height - 80, 'Co-op: press 2, or Y on a gamepad', 2).setOrigin(0.5).setAlpha(0.6),
-      pixelText(this, cx, height - 55, 'Online: H to host, J to join', 2).setOrigin(0.5).setAlpha(0.6),
+    this.menuButtons = [
+      button('Play', (device) => this.start([device])),
+      button('Local co-op', (device) => this.showJoin(device)),
+      button('Host online', (device) => this.hostOnline(device)),
+      button('Join online', () => this.joinOnline(window.prompt('Room code'))),
     ];
-    this.joinP1 = pixelText(this, cx, height - 120, '', 2).setOrigin(0.5).setTint(KEY_COLOR);
-    this.joinP2 = blink(pixelText(this, cx, height - 95, '', 2).setOrigin(0.5).setTint(PAD_COLOR));
-    this.joinBack = pixelText(this, cx, height - 60, 'Esc or B to go back', 2).setOrigin(0.5).setAlpha(0.6);
+    // In the co-op lobby, the keyboard and mouse join as player 2 with this (gamepads press A).
+    this.joinKbmButton = button('P2 on keyboard', (device) => device === 'kbm' && this.start([this.p1, 'kbm']));
+    this.backButton = button('Back', () => this.showTitle());
+    this.allButtons = [...this.menuButtons, this.joinKbmButton, this.backButton];
     this.online = null; // set while hosting or joining a room
     this.showTitle();
 
     this.started = false; // a click and a key press can land in the same frame
     this.input.mouse.disableContextMenu();
-    this.input.on('pointerdown', (pointer, over) => {
-      const tab = Object.keys(this.tabs).find((view) => over.includes(this.tabs[view]));
-      const arrow = this.arrows.findIndex((a) => over.includes(a));
-      if (tab) this.pickView(tab);
-      else if (arrow >= 0) this.cycleClass('kbm', arrow === 0 ? -1 : 1);
-      else this.onPress('kbm');
-    });
     this.input.keyboard.on('keydown', (e) => {
       if (e.repeat) return;
       if (e.key === 'Escape') this.showTitle();
       else if (e.key === 'Tab') {
         e.preventDefault(); // keep focus on the game
         this.pickView(this.view === 'kbm' ? 'pad' : 'kbm');
-      } else if (this.online) return;
-      else if (e.key === 'h' || e.key === 'H') this.hostOnline();
-      else if (e.key === 'j' || e.key === 'J') this.joinOnline(window.prompt('Room code'));
-      else if (PREV_KEYS.includes(e.key)) this.cycleClass('kbm', -1);
-      else if (NEXT_KEYS.includes(e.key)) this.cycleClass('kbm', 1);
-      else this.onPress('kbm', e.key === '2');
+      } else if (KEY_STEPS[e.key]) {
+        e.preventDefault(); // Space and the arrows would scroll the page
+        this.step('kbm', ...KEY_STEPS[e.key]);
+      } else if (CONFIRM_KEYS.includes(e.key)) {
+        e.preventDefault();
+        this.confirm('kbm');
+      }
     });
-    this.input.gamepad.on('down', (pad, button) => {
-      if (button.index === PAD.back) this.showTitle();
-      else if (button.index === PAD.view) this.pickView(this.view === 'kbm' ? 'pad' : 'kbm');
-      else if (PAD_PREV.includes(button.index)) this.cycleClass(pad.index, -1);
-      else if (PAD_NEXT.includes(button.index)) this.cycleClass(pad.index, 1);
-      else this.onPress(pad.index, button.index === PAD.coop);
+    this.input.gamepad.on('down', (pad, { index }) => {
+      if (index === PAD.back) this.showTitle();
+      else if (index === PAD.view) this.pickView(this.view === 'kbm' ? 'pad' : 'kbm');
+      else if (PAD_CLASS_STEPS[index]) this.cycleClass(pad.index, PAD_CLASS_STEPS[index]);
+      else if (PAD_STEPS[index]) this.step(pad.index, ...PAD_STEPS[index]);
+      else if (index === PAD_CONFIRM) this.confirm(pad.index);
     });
 
     if (joinFromUrl) this.joinOnline(joinFromUrl);
@@ -177,56 +194,104 @@ export class StartScene extends Phaser.Scene {
     this.showView(view);
   }
 
+  // Shows `buttons` in a row along the bottom, focusing the one at `focus` (or the class picker, at -1).
+  showButtons(buttons, focus = 0) {
+    for (const b of this.allButtons) b.setVisible(false);
+    const total = buttons.reduce((sum, b) => sum + b.width, 0) + BUTTON_GAP * (buttons.length - 1);
+    let x = (this.cameras.main.width - total) / 2;
+    for (const b of buttons) {
+      b.setPosition(x + b.width / 2, BUTTON_Y).setVisible(true);
+      x += b.width + BUTTON_GAP;
+    }
+    this.buttons = buttons;
+    this.lastButton = Math.max(focus, 0);
+    this.setFocus(focus);
+  }
+
+  // Focus on the class picker (-1) or this.buttons[focus].
+  setFocus(focus) {
+    if (focus < 0 && this.online) focus = 0; // nothing to pick while online
+    this.focus = Phaser.Math.Clamp(focus, -1, this.buttons.length - 1);
+    this.buttons.forEach((b, i) => b.setFocused(i === this.focus));
+    for (const arrow of this.arrows) {
+      if (this.focus < 0) arrow.setTint(KEY_COLOR).setAlpha(1);
+      else arrow.clearTint().setAlpha(0.6);
+    }
+  }
+
+  focusButton(button) {
+    const i = this.buttons.indexOf(button);
+    if (i >= 0) this.setFocus(i);
+  }
+
+  // `device` pushed left / right (dx) or up / down (dy): up and down go between the class picker and
+  // the buttons, left and right pick the class or the next button.
+  step(device, dx, dy) {
+    if (dy < 0) this.setFocus(-1);
+    else if (dy > 0) this.setFocus(Math.max(this.lastButton ?? 0, 0));
+    else if (this.focus < 0) this.cycleClass(device, dx);
+    else this.setFocus(Phaser.Math.Clamp(this.focus + dx, 0, this.buttons.length - 1));
+    if (this.focus >= 0) this.lastButton = this.focus;
+  }
+
+  // Enter, Space or A on `device`. In the co-op lobby, A on any gamepad but player 1's joins as player 2.
+  confirm(device) {
+    if (this.p1 !== null && device !== 'kbm' && device !== this.p1) this.start([this.p1, device]);
+    else if (this.focus < 0) this.step(device, 0, 1);
+    else this.buttons[this.focus].press(device);
+  }
+
   showTitle() {
     this.online?.cancel?.();
     this.online = null;
     this.p1 = null;
     this.slot = 0;
     this.showClass();
-    for (const t of this.titleHints) t.setVisible(true);
-    for (const t of [this.joinP1, this.joinP2, this.joinBack]) t.setVisible(false);
+    this.statusTop.setVisible(false);
+    this.statusBottom.setVisible(false);
+    this.showButtons(this.menuButtons);
   }
 
   showJoin(p1) {
     this.p1 = p1;
     this.slot = 1;
     this.showClass();
-    for (const t of this.titleHints) t.setVisible(false);
     const p1Class = CLASSES[CLASS_IDS[this.picks[0]]].title;
-    this.joinP1.setText(`P1: ${deviceName(p1)} - ${p1Class}`.toUpperCase()).setVisible(true);
-    const waiting = p1 === 'kbm' ? 'P2: pick a class, then press A on a gamepad' : 'P2: pick a class, then press A on another gamepad, or click';
-    this.joinP2.setText(waiting.toUpperCase()).setVisible(true);
-    this.joinBack.setVisible(true);
+    this.statusTop.setText(`P1: ${deviceName(p1)} - ${p1Class}`.toUpperCase()).setVisible(true);
+    const waiting = p1 === 'kbm' ? 'P2: pick a class, then press A on a gamepad' : 'P2: pick a class, then press A on another gamepad';
+    this.statusBottom.setText(waiting.toUpperCase()).setVisible(true);
+    // The picker now shows player 2's class, so focus it for whoever picks next.
+    this.showButtons(p1 === 'kbm' ? [this.backButton] : [this.joinKbmButton, this.backButton], -1);
   }
 
-  // Online status in place of the hints: two lines and the way back.
+  // Online status above a lone Back button.
   showOnline(line1, line2 = '') {
-    for (const t of this.titleHints) t.setVisible(false);
-    this.joinP1.setText(line1.toUpperCase()).setVisible(true);
-    this.joinP2.setText(line2.toUpperCase()).setVisible(true);
-    this.joinBack.setVisible(true);
+    this.statusTop.setText(line1.toUpperCase()).setVisible(true);
+    this.statusBottom.setText(line2.toUpperCase()).setVisible(true);
+    if (this.buttons[0] !== this.backButton) this.showButtons([this.backButton]);
   }
 
-  // Opens a room and waits for a guest; the run starts when one says hello with its class.
-  async hostOnline() {
+  // Opens a room and waits for a guest; the run starts when one says hello with its class. `device`
+  // plays player 1.
+  async hostOnline(device) {
     const session = (this.online = { cancel: null });
     this.showOnline('Opening a room...');
     try {
       const room = await hostRoom((link) => {
         if (this.online !== session) return link.close();
-        link.once('hello', (msg) => this.startOnline(link, msg.class));
+        link.once('hello', (msg) => this.startOnline(link, msg.class, device));
       });
       if (this.online !== session) return room.cancel();
       session.cancel = room.cancel;
-      this.showOnline(`Room code: ${room.code}`, 'Waiting for P2 to press J and enter it');
+      this.showOnline(`Room code: ${room.code}`, 'Waiting for P2 to press Join online and enter it');
     } catch (err) {
       if (this.online === session) this.showOnline('Could not open a room', err.message);
     }
   }
 
-  startOnline(link, guestClass) {
+  startOnline(link, guestClass, device) {
     const classes = [CLASS_IDS[this.picks[0]], CLASSES[guestClass] ? guestClass : 'knight'];
-    if (!this.started) this.scene.start('game', { devices: ['kbm', 'remote'], classes, link });
+    if (!this.started) this.scene.start('game', { devices: [device, 'remote'], classes, link });
     this.started = true;
   }
 
@@ -243,17 +308,6 @@ export class StartScene extends Phaser.Scene {
       this.scene.start('guest', { link });
     } catch (err) {
       if (this.online === session) this.showOnline('Could not join', err.message);
-    }
-  }
-
-  // A press on `device`. `coop` asks for co-op instead of a solo run.
-  onPress(device, coop = false) {
-    if (this.online) return;
-    if (this.p1 === null) {
-      if (coop) this.showJoin(device);
-      else this.start([device]);
-    } else if (device !== this.p1) {
-      this.start([this.p1, device]); // P1's own presses just wait for player 2
     }
   }
 
