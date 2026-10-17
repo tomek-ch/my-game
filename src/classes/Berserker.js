@@ -217,21 +217,28 @@ export class Berserker extends HeroClass {
     const ux = Math.cos(angle);
     const uy = Math.sin(angle);
     const flicker = Math.floor(now / L.flickerMs);
-    const spread = H.halfWidth - L.halfWidth; // the outer lines' edges line up with the shoulders
-    for (let i = 0; i < L.count; i++) {
-      const side = (i / (L.count - 1)) * 2 - 1; // -1 to 1 across the head
-      const off = side * spread;
-      // Each line starts a little inside the head's back edge, so it grows out of it.
-      const start = H.back + spearheadBackEdge(H, Math.abs(off)) + 3;
+    const edge = H.halfWidth - L.halfWidth; // a shoulder line's edge lines up with the shoulder
+    // A line `off` px across, starting `start` px ahead of the hero's center.
+    const line = (gfx, i, off, start, fill, a) => {
       const x = p.x + ux * start - uy * off;
       const y = p.y + uy * start + ux * off;
-      const wake = L.innerLength + (1 - L.innerLength) * Math.abs(side);
-      const len = L.length * wake * (1 - L.jitter * noise(i, flicker));
-      const fill = i % 2 ? color : EDGE_TINT;
-      lines.fillStyle(fill, 0.95 * alpha);
-      pixelSpike(lines, x, y, angle + Math.PI, len, L.halfWidth, (f) => f < 0.6);
-      lines.fillStyle(fill, 0.6 * alpha);
-      pixelSpike(lines, x, y, angle + Math.PI, len, L.halfWidth, (f) => f >= 0.6);
+      const wake = L.innerLength + (1 - L.innerLength) * Math.abs(off) / edge;
+      // Lines from further forward are longer by the difference, so they all trail out as far.
+      const len = L.length * wake * (1 - L.jitter * noise(i, flicker)) + start - H.back;
+      gfx.fillStyle(fill, 0.95 * a * alpha);
+      pixelSpike(gfx, x, y, angle + Math.PI, len, L.halfWidth, (f) => f < 0.6);
+      gfx.fillStyle(fill, 0.6 * a * alpha);
+      pixelSpike(gfx, x, y, angle + Math.PI, len, L.halfWidth, (f) => f >= 0.6);
+    };
+    // Each starts a little inside the part it grows from. Wall and shoulder lines go behind the hero;
+    // the tip lines cross it, under the head so they join the tip seamlessly.
+    const wallOff = H.halfWidth - H.wall / 2;
+    const backEdge = (off) => H.back + spearheadBackEdge(H, Math.abs(off)) + 3;
+    [-edge, edge].forEach((off, i) => line(lines, i, off, backEdge(off), EDGE_TINT, 1));
+    [-wallOff, wallOff].forEach((off, i) => line(lines, 2 + i, off, backEdge(off), color, 1));
+    for (let i = 0; i < L.tip; i++) {
+      const off = (i - (L.tip - 1) / 2) * L.tipSpread;
+      line(g, 4 + i, off, H.back + H.hollow + 4, color, L.tipAlpha);
     }
 
     const draw = (fill, a, pick) => {
