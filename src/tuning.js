@@ -117,16 +117,14 @@ export const TUNING = {
         killHitstopBonusMs: 20,
         ghostIntervalMs: 14,
         shake: { duration: 70, intensity: 0.004 },
-        // Drawn during a strike and fading out after it: a spearhead ahead of you (see pixelSpearhead)...
-        head: { back: 14, length: 56, halfWidth: 26, sweep: 10, hollow: 34, wall: 8, rim: 4, fadeMs: 140 },
-        // ...and speed lines streaming back out of it, each the colour of the part it grows from:
-        // `tip` lines out of the solid tip (across the hero, `tipSpread` px apart), one out of each
-        // side wall, and one out of each shoulder point's rim. The outer lines run longest, the
-        // middle ones `innerLength` of that; every flickerMs each one's length is rerolled by up to
-        // `jitter` of it. tipAlpha: how see-through the tip lines are where they cross the hero.
-        speedLines: {
-          tip: 3, tipSpread: 8, length: 95, innerLength: 0.6, halfWidth: 3, tipAlpha: 0.7,
-          jitter: 0.35, flickerMs: 45,
+        // Drawn during a strike, behind you, and fading out after it: a swoosh of strands that meet at a
+        // point `tipAhead` px ahead of you, curve out like the sides of a spearhead to `halfWidth` either
+        // side `length` px behind the point, and trail back (see pixelStrand). Colours alternate. The
+        // outer strands' tails are `tail` long, the middle ones' `innerTail` of that; every flickerMs
+        // each tail is rerolled by up to `jitter` of it.
+        swoosh: {
+          tipAhead: 70, length: 56, halfWidth: 24, strands: 7, strandWidth: 2.5, tail: 64,
+          innerTail: 0.6, flare: 0.25, jitter: 0.3, flickerMs: 45, fadeMs: 140,
         },
       },
 

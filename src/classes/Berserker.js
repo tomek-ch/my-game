@@ -3,11 +3,11 @@ import { TUNING } from '../tuning.js';
 import { sfx } from '../audio/sfx.js';
 import { HeroClass } from './HeroClass.js';
 import { isFrozen } from '../entities/hitstop.js';
-import { pixelSpearhead, pixelSpike, spearheadBackEdge } from '../pixelShapes.js';
+import { pixelStrand } from '../pixelShapes.js';
 
 export const MOMENTUM_TINT = 0xff8a3d;
 export const RAGE_TINT = 0xff3b3b;
-const EDGE_TINT = 0xffe2b8; // the strike's leading edge
+const LIGHT_TINT = 0xffe2b8; // every other strand of the strike's swoosh
 const STRIKE_SWING_DEG = 110; // the axe starts this far to one side of the strike and ends at rest on the other
 
 // No plain dash: the attack is a dash strike toward the aim that cuts through everything in its path.
@@ -35,14 +35,10 @@ export class Berserker extends HeroClass {
     this.strike = null;       // the strike in progress, see tryStrike()
     this.side = 1;            // strikes alternate which way the axe swings
     this.cooldownShown = true; // whether the dash-back ring has played since the last miss
-    this.head = scene.add.graphics();
-    this.lines = scene.add.graphics(); // the speed lines, drawn behind the hero
-    this.headAngle = 0;
-    this.headFadeFrom = -Infinity; // when the last strike ended, for the arrowhead's fade
-    player.on('destroy', () => {
-      this.head.destroy();
-      this.lines.destroy();
-    });
+    this.swoosh = scene.add.graphics();
+    this.swooshAngle = 0;
+    this.swooshFadeFrom = -Infinity; // when the last strike ended, for the swoosh's fade
+    player.on('destroy', () => this.swoosh.destroy());
   }
 
   get hudValue() {
@@ -188,7 +184,7 @@ export class Berserker extends HeroClass {
     const S = this.cfg.strike;
     const strike = this.strike;
     this.strike = null;
-    this.headFadeFrom = now;
+    this.swooshFadeFrom = now;
     const chained = strike.struckAny && !strike.stopped;
     let cooldown = S.chainCooldownMs;
     if (strike.stopped) cooldown = S.stoppedCooldownMs;
@@ -197,57 +193,34 @@ export class Berserker extends HeroClass {
     this.cooldownShown = chained;
   }
 
-  // A spearhead out in front during a strike, with speed lines streaming back from it behind the hero;
-  // it all fades once the strike ends. Brightest along the leading edge and toward the tip.
+  // During a strike, a swoosh of strands meeting at a point ahead of you and streaming back past you,
+  // behind the hero; it fades once the strike ends.
   syncVisuals(now) {
-    const S = this.cfg.strike;
-    const H = S.head;
-    const g = this.head.clear();
-    const lines = this.lines.clear();
-    if (this.strike) this.headAngle = this.strike.angle;
-    const alpha = this.strike ? 1 : 1 - (now - this.headFadeFrom) / H.fadeMs;
+    const W = this.cfg.strike.swoosh;
+    const g = this.swoosh.clear();
+    if (this.strike) this.swooshAngle = this.strike.angle;
+    const alpha = this.strike ? 1 : 1 - (now - this.swooshFadeFrom) / W.fadeMs;
     if (alpha <= 0) return;
     const p = this.player;
-    const angle = this.headAngle;
     const color = this.raging ? RAGE_TINT : MOMENTUM_TINT;
-    g.setDepth(p.depth + 0.0002);
-    lines.setDepth(p.depth - 0.0002);
-
-    const L = S.speedLines;
-    const ux = Math.cos(angle);
-    const uy = Math.sin(angle);
-    const flicker = Math.floor(now / L.flickerMs);
-    const edge = H.halfWidth - L.halfWidth; // a shoulder line's edge lines up with the shoulder
-    // A line `off` px across, starting `start` px ahead of the hero's center.
-    const line = (gfx, i, off, start, fill, a) => {
-      const x = p.x + ux * start - uy * off;
-      const y = p.y + uy * start + ux * off;
-      const wake = L.innerLength + (1 - L.innerLength) * Math.abs(off) / edge;
-      // Lines from further forward are longer by the difference, so they all trail out as far.
-      const len = L.length * wake * (1 - L.jitter * noise(i, flicker)) + start - H.back;
-      gfx.fillStyle(fill, 0.95 * a * alpha);
-      pixelSpike(gfx, x, y, angle + Math.PI, len, L.halfWidth, (f) => f < 0.6);
-      gfx.fillStyle(fill, 0.6 * a * alpha);
-      pixelSpike(gfx, x, y, angle + Math.PI, len, L.halfWidth, (f) => f >= 0.6);
-    };
-    // Each starts a little inside the part it grows from. Wall and shoulder lines go behind the hero;
-    // the tip lines cross it, under the head so they join the tip seamlessly.
-    const wallOff = H.halfWidth - H.wall / 2;
-    const backEdge = (off) => H.back + spearheadBackEdge(H, Math.abs(off)) + 3;
-    [-edge, edge].forEach((off, i) => line(lines, i, off, backEdge(off), EDGE_TINT, 1));
-    [-wallOff, wallOff].forEach((off, i) => line(lines, 2 + i, off, backEdge(off), color, 1));
-    for (let i = 0; i < L.tip; i++) {
-      const off = (i - (L.tip - 1) / 2) * L.tipSpread;
-      line(g, 4 + i, off, H.back + H.hollow + 4, color, L.tipAlpha);
+    const flicker = Math.floor(now / W.flickerMs);
+    g.setDepth(p.depth - 0.0002);
+    for (let i = 0; i < W.strands; i++) {
+      const side = (i / (W.strands - 1)) * 2 - 1; // -1 to 1 across
+      const wake = W.innerTail + (1 - W.innerTail) * Math.abs(side);
+      const strand = {
+        tipAhead: W.tipAhead,
+        length: W.length,
+        offset: side * (W.halfWidth - W.strandWidth),
+        tail: W.tail * wake * (1 - W.jitter * noise(i, flicker)),
+        flare: W.flare,
+        halfWidth: W.strandWidth,
+      };
+      g.fillStyle(i % 2 ? color : LIGHT_TINT, alpha);
+      pixelStrand(g, p.x, p.y, this.swooshAngle, strand, (t) => t < 0.65);
+      g.fillStyle(i % 2 ? color : LIGHT_TINT, 0.6 * alpha);
+      pixelStrand(g, p.x, p.y, this.swooshAngle, strand, (t) => t >= 0.65);
     }
-
-    const draw = (fill, a, pick) => {
-      g.fillStyle(fill, a * alpha);
-      pixelSpearhead(g, p.x, p.y, angle, H, pick);
-    };
-    draw(color, 0.8, (f, rim) => !rim && f < 0.5);
-    draw(color, 0.95, (f, rim) => !rim && f >= 0.5);
-    draw(EDGE_TINT, 1, (f, rim) => rim);
   }
 
   // Fire with a full bar: hit everything around you. Waits for a strike in progress to finish.
