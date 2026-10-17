@@ -8,11 +8,12 @@ import { addDungeon } from '../world/dungeon.js';
 import { ART_SCALE } from '../art.js';
 import { Hud } from '../ui/Hud.js';
 import { Fx } from '../fx.js';
-import { sfx } from '../audio/sfx.js';
+import { SOUNDS, sfx } from '../audio/sfx.js';
 import { createControls } from '../input/controls.js';
 import { freeze, isFrozen, thaw } from '../entities/hitstop.js';
 import { CLASSES } from '../classes/index.js';
 import { MirrorSender } from '../net/mirror.js';
+import { EventRecorder } from '../net/events.js';
 import { CameraFocus, leanCamera, watchedPlayers } from '../camera.js';
 
 const MAX_PLAYERS = 2;
@@ -20,6 +21,10 @@ const LEASH_MARGIN = 40; // local co-op players can't walk further apart than th
 // ?boss=<seconds> makes the warden arrive then instead of at its usual time, for testing.
 const BOSS_AT = Number(new URLSearchParams(location.search).get('boss') ?? NaN);
 const SNAPSHOT_INTERVAL_MS = 50; // how often an online host sends the guest what's on screen
+// The one-off effects an online guest is told about (see src/net/events.js). The rest of Fx works on
+// sprites and graphics, which reach the guest with the screen.
+const GUEST_FX = ['hitSparks', 'bloodBurst', 'dashDust', 'ember', 'projectileTrail'];
+const GUEST_HUD = ['announceBoss', 'bossSlain', 'banner', 'shakeResource'];
 
 export class GameScene extends Phaser.Scene {
   constructor() {
@@ -41,7 +46,7 @@ export class GameScene extends Phaser.Scene {
 
     this.physics.world.setBounds(0, 0, W, H);
     const art = addDungeon(this, W, H);
-    this.mirror = this.link ? new MirrorSender(this) : null; // see sendSnapshot()
+    this.mirror = this.link ? new MirrorSender(this) : null; // see syncGuest()
 
     const coop = this.playerCount > 1;
     this.players = [];
@@ -99,15 +104,24 @@ export class GameScene extends Phaser.Scene {
     // sprite is synced here; doing it in update() drew it a frame behind.
     this.events.on('postupdate', this.syncVisuals, this);
     this.events.once('shutdown', () => this.events.off('postupdate', this.syncVisuals, this));
+
+    this.hud = new Hud(this, TUNING.player.maxHp, this.classes.map((id) => CLASSES[id]));
+
     if (this.link) {
+      this.recorder = new EventRecorder();
+      this.recorder.record('sfx', sfx, SOUNDS, { sounds: true });
+      this.recorder.record('fx', this.fx, GUEST_FX);
+      this.recorder.record('cam', this.cameras.main, ['shake', 'flash']);
+      this.recorder.record('hud', this.hud, GUEST_HUD);
       // After syncVisuals, so the guest gets this frame's picture. It keeps going after game over.
-      this.events.on('postupdate', this.sendSnapshot, this);
-      this.events.once('shutdown', () => this.events.off('postupdate', this.sendSnapshot, this));
+      this.events.on('postupdate', this.syncGuest, this);
+      this.events.once('shutdown', () => {
+        this.events.off('postupdate', this.syncGuest, this);
+        this.recorder.dispose(); // sfx outlives the scene
+      });
       this.runId = Date.now(); // tells the guest a restart from the next snapshot
       this.nextSnapshotAt = 0;
     }
-
-    this.hud = new Hud(this, TUNING.player.maxHp, this.classes.map((id) => CLASSES[id]));
   }
 
   update(_time, delta) {
@@ -137,21 +151,26 @@ export class GameScene extends Phaser.Scene {
     this.updateHud(now);
   }
 
-  // Online: what the guest needs to show this frame (see src/net/mirror.js), and where the players are,
-  // for its camera and for aiming with the mouse.
-  sendSnapshot() {
+  // Online: this frame's one-off effects (see src/net/events.js), and every so often what's on screen
+  // (see src/net/mirror.js) and where the players are, for the guest's camera and mouse aim.
+  syncGuest() {
     const now = this.time.now;
-    if (!this.link.open || now < this.nextSnapshotAt) return;
-    this.nextSnapshotAt = now + SNAPSHOT_INTERVAL_MS;
-    this.link.send({
-      t: 'snap',
-      run: this.runId,
-      classes: this.classes,
-      players: this.players.map((p) => [Math.round(p.x), Math.round(p.y), p.alive]),
-      objects: this.mirror.capture(),
-      hud: this.hudData(this.isOver ? this.overAt : now),
-      over: this.isOver ? this.overStats : null,
-    });
+    const events = this.recorder.take();
+    if (!this.link.open) return;
+    // The snapshot first: a new run's first one is what tells the guest to start over.
+    if (now >= this.nextSnapshotAt) {
+      this.nextSnapshotAt = now + SNAPSHOT_INTERVAL_MS;
+      this.link.send({
+        t: 'snap',
+        run: this.runId,
+        classes: this.classes,
+        players: this.players.map((p) => [Math.round(p.x), Math.round(p.y), p.alive]),
+        objects: this.mirror.capture(),
+        hud: this.hudData(this.isOver ? this.overAt : now),
+        over: this.isOver ? this.overStats : null,
+      });
+    }
+    if (events.length) this.link.send({ t: 'fx', run: this.runId, events });
   }
 
   livingPlayers() {

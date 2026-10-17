@@ -6,12 +6,16 @@ import { Hud } from '../ui/Hud.js';
 import { CLASSES } from '../classes/index.js';
 import { MouseKeyboardControls, PRESSES, inputMessage } from '../input/controls.js';
 import { MirrorReceiver } from '../net/mirror.js';
+import { EventPlayer } from '../net/events.js';
+import { Fx } from '../fx.js';
+import { sfx } from '../audio/sfx.js';
 import { CameraFocus, leanCamera, watchedPlayers } from '../camera.js';
 
 // The guest's side of an online game. The host runs the whole game and sends what's on screen several
-// times a second (see GameScene.sendSnapshot and src/net/mirror.js); this scene rebuilds it, draws the
-// HUD from the host's numbers, and sends the keyboard and mouse back to drive player 2 (see
-// RemoteControls). Its camera is its own, on player 2. Esc leaves.
+// times a second (see GameScene.syncGuest and src/net/mirror.js); this scene rebuilds it, draws the
+// HUD from the host's numbers, plays the host's sounds and effects (src/net/events.js), and sends the
+// keyboard and mouse back to drive player 2 (see RemoteControls). Its camera is its own, on player 2.
+// M mutes, Esc leaves.
 export class GuestScene extends Phaser.Scene {
   constructor() {
     super('guest');
@@ -37,6 +41,11 @@ export class GuestScene extends Phaser.Scene {
     this.status = pixelText(this, width / 2, 30, 'Connected - waiting for the host', 2).setOrigin(0.5).setDepth(1000);
 
     this.mirror = new MirrorReceiver(this);
+    this.fx = new Fx(this);
+    sfx.init(this.sound.context);
+    sfx.listener = this.cameraFocus.point;
+    this.input.keyboard.on('keydown-M', () => sfx.toggleMute());
+    this.effects = new EventPlayer({ sfx, fx: this.fx, cam: this.cameras.main, hud: null }); // hud: see showSnapshot
     this.controls = new MouseKeyboardControls(this);
     this.sentPresses = Object.fromEntries(PRESSES.map((key) => [key, this.controls[key]]));
     this.lastInput = null;
@@ -46,9 +55,11 @@ export class GuestScene extends Phaser.Scene {
     this.overShown = false;
 
     const onSnap = (snap) => this.showSnapshot(snap);
+    // Effects from another run (just before a restart) are dropped.
+    const onFx = (msg) => msg.run === this.run && this.effects.play(msg.events, this.time.now);
     const onClose = () => this.status.setText('Host disconnected - Esc for the title'.toUpperCase()).setTint(0xff6b6b).setVisible(true);
-    this.link.on('snap', onSnap).on('close', onClose);
-    this.events.once('shutdown', () => this.link.off('snap', onSnap).off('close', onClose));
+    this.link.on('snap', onSnap).on('fx', onFx).on('close', onClose);
+    this.events.once('shutdown', () => this.link.off('snap', onSnap).off('fx', onFx).off('close', onClose));
 
     this.input.keyboard.on('keydown-ESC', () => {
       this.link.close();
@@ -68,6 +79,7 @@ export class GuestScene extends Phaser.Scene {
     if (this.run === null) {
       this.run = snap.run;
       this.hud = new Hud(this, TUNING.player.maxHp, snap.classes.map((id) => CLASSES[id]));
+      this.effects.targets.hud = this.hud;
       this.status.setVisible(false);
     }
     const firstSnap = !this.snap;
@@ -78,7 +90,7 @@ export class GuestScene extends Phaser.Scene {
       this.cameras.main.centerOn(this.cameraFocus.point.x, this.cameraFocus.point.y);
     }
     this.mirror.apply(snap.objects);
-    this.hud.update(this.time.now, snap.hud);
+    this.hud.update(this.time.now, { ...snap.hud, muted: sfx.muted }); // muting is per machine
     if (snap.over && !this.overShown) {
       this.overShown = true;
       this.hud.showGameOver(snap.over, 'Waiting for the host to restart');

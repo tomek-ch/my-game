@@ -392,3 +392,7 @@ class Sfx {
 }
 
 export const sfx = new Sfx();
+
+// The sound effects themselves, by method name: everything but the setup and the synth plumbing.
+const NOT_SOUNDS = ['constructor', 'init', 'toggleMute', 'play', 'tone', 'noise', 'envelope', 'track'];
+export const SOUNDS = Object.getOwnPropertyNames(Sfx.prototype).filter((name) => !NOT_SOUNDS.includes(name));

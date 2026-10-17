@@ -80,7 +80,9 @@ export function joinRoom(code) {
     };
     peer.on('error', fail);
     peer.on('open', () => {
-      const conn = peer.connect(ID_PREFIX + code.toUpperCase(), { reliable: true });
+      // JSON, not PeerJS's default binary packing, which recurses once per array item and overflows the
+      // stack on a long one (a boss's telegraph has thousands of draw commands).
+      const conn = peer.connect(ID_PREFIX + code.toUpperCase(), { reliable: true, serialization: 'json' });
       conn.on('open', () => {
         peer.off('error', fail);
         resolve(new Link(peer, conn));

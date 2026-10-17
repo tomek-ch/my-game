@@ -106,11 +106,15 @@ export class Fx {
 
   // Stretch along the dash's main axis (pixel sprites don't rotate) and kick up dust behind.
   dashStart(sprite, angle) {
-    this.sparks.explode(6, sprite.x - Math.cos(angle) * 10, sprite.y - Math.sin(angle) * 10);
+    this.dashDust(sprite.x - Math.cos(angle) * 10, sprite.y - Math.sin(angle) * 10);
     const horizontal = Math.abs(Math.cos(angle)) >= Math.abs(Math.sin(angle));
     const base = sprite.baseScale ?? 1;
     sprite.setScale(base * (horizontal ? 1.4 : 0.7), base * (horizontal ? 0.7 : 1.4));
     this.scene.tweens.add({ targets: sprite, scaleX: base, scaleY: base, duration: 220, ease: 'Quad.easeOut' });
+  }
+
+  dashDust(x, y) {
+    this.sparks.explode(6, x, y);
   }
 
   afterimage(sprite, color = 0x5ce1ff) {
