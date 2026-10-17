@@ -10,11 +10,12 @@ import { shadowTexture } from '../textures.js';
 // the guest draws from the host's HUD data instead), particles and render textures (blood stains).
 //
 // Entries are arrays to keep snapshots small:
-//   image:    ['i', id, texture, frame, x, y, scaleX, scaleY, originX, originY, rotation, flags, alpha, depth, tint, blendMode]
+//   image:    ['i', id, texture, frame, x, y, scaleX, scaleY, originX, originY, rotation, flags, alpha, depth, tint, blendMode, glows?]
 //   graphics: ['g', id, x, y, scaleX, scaleY, rotation, flags, alpha, depth, blendMode, commands]
 // flags: bit 0 visible, 1 flipX, 2 flipY, 3 tint fill. A graphics' commands are sent only when they
 // changed since the last snapshot (null otherwise), which is safe because the link is ordered and
-// reliable.
+// reliable. glows, only on an image with glow effects (the berserker's rage): [padding, [color,
+// outerStrength, innerStrength, knockout]...]. Other shader effects aren't copied.
 
 const VISIBLE = 1;
 const FLIP_X = 2;
@@ -54,10 +55,15 @@ export class MirrorSender {
   }
 
   image(o) {
-    return [
+    const entry = [
       'i', this.idOf(o), o.texture.key, o.frame.name, r1(o.x), r1(o.y), r3(o.scaleX), r3(o.scaleY),
       r3(o.originX), r3(o.originY), r3(o.rotation), flagsOf(o), r3(o.alpha), r1(o.depth), o.tintTopLeft, o.blendMode,
     ];
+    const glows = o.preFX?.list.filter((fx) => fx instanceof Phaser.FX.Glow) ?? [];
+    if (glows.length) {
+      entry.push([o.preFX.padding, ...glows.map((g) => [g.color, r3(g.outerStrength), r3(g.innerStrength), g.knockout ? 1 : 0])]);
+    }
+    return entry;
   }
 
   graphics(o) {
@@ -98,7 +104,7 @@ export class MirrorReceiver {
     }
   }
 
-  applyImage(o, [, , texture, frame, x, y, sx, sy, ox, oy, rotation, flags, alpha, depth, tint, blend]) {
+  applyImage(o, [, , texture, frame, x, y, sx, sy, ox, oy, rotation, flags, alpha, depth, tint, blend, glows]) {
     if (!this.scene.textures.exists(texture)) {
       const shadow = texture.match(/^shadow-(\d+)$/);
       if (shadow) shadowTexture(this.scene, Number(shadow[1]));
@@ -109,6 +115,26 @@ export class MirrorReceiver {
     if (flags & TINT_FILL) o.setTintFill(tint);
     else o.setTint(tint);
     o.setAlpha(alpha).setDepth(depth).setBlendMode(blend);
+    this.applyGlows(o, glows);
+  }
+
+  // Shader effects need WebGL; with the canvas renderer there's no preFX and no glow, as on the host.
+  applyGlows(o, glows) {
+    const fx = o.preFX;
+    if (!fx) return;
+    if (!glows) {
+      if (fx.list.length) fx.clear();
+      return;
+    }
+    const [padding, ...list] = glows;
+    if (fx.list.length !== list.length) {
+      fx.clear();
+      for (let i = 0; i < list.length; i++) fx.addGlow();
+    }
+    fx.setPadding(padding);
+    list.forEach(([color, outerStrength, innerStrength, knockout], i) => {
+      Object.assign(fx.list[i], { color, outerStrength, innerStrength, knockout: !!knockout });
+    });
   }
 
   applyGraphics(o, [, , x, y, sx, sy, rotation, flags, alpha, depth, blend, commands]) {

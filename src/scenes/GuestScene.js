@@ -92,7 +92,6 @@ export class GuestScene extends Phaser.Scene {
       this.cameras.main.centerOn(this.cameraFocus.point.x, this.cameraFocus.point.y);
     }
     this.mirror.apply(snap.objects);
-    this.hud.update(this.time.now, { ...snap.hud, muted: sfx.muted }); // muting is per machine
     if (snap.over && !this.overShown) {
       this.overShown = true;
       this.hud.showGameOver(snap.over, 'Waiting for the host to restart');
@@ -112,6 +111,9 @@ export class GuestScene extends Phaser.Scene {
     const me = this.snap?.players[1];
     if (!me) return;
     this.updateCamera(Math.min(delta, 50) / 1000);
+    // Every frame, as on the host, for the HUD's own animations (a full bar's flash, the boss bar
+    // draining); the numbers are the latest snapshot's. Muting is per machine.
+    this.hud.update(this.time.now, { ...this.snap.hud, muted: sfx.muted });
     if (!this.link.open) return;
     const c = this.controls;
     c.update({ x: me[0], y: me[1] });
