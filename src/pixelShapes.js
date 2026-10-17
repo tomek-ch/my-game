@@ -67,3 +67,15 @@ export function pixelLine(g, x1, y1, x2, y2, width) {
     return along >= 0 && along <= len && across <= half;
   });
 }
+
+// An arrowhead pointing along `angle`: its tip `back + length` px from (cx, cy), its two barbs `back`
+// px out and `halfWidth` to each side, and a notch cut `notch` px into the back between them.
+export function pixelArrowhead(g, cx, cy, angle, back, length, halfWidth, notch) {
+  const ux = Math.cos(angle);
+  const uy = Math.sin(angle);
+  return fillPixels(g, cx, cy, back + length, (x, y) => {
+    const u = (x - cx) * ux + (y - cy) * uy - back;
+    const v = Math.abs((x - cx) * uy - (y - cy) * ux) / halfWidth;
+    return v <= 1 && u <= length * (1 - v) && u >= notch * (1 - v);
+  });
+}

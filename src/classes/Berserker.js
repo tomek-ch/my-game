@@ -3,6 +3,7 @@ import { TUNING } from '../tuning.js';
 import { sfx } from '../audio/sfx.js';
 import { HeroClass } from './HeroClass.js';
 import { isFrozen } from '../entities/hitstop.js';
+import { pixelArrowhead } from '../pixelShapes.js';
 
 export const MOMENTUM_TINT = 0xff8a3d;
 export const RAGE_TINT = 0xff3b3b;
@@ -33,6 +34,10 @@ export class Berserker extends HeroClass {
     this.strike = null;       // the strike in progress, see tryStrike()
     this.side = 1;            // strikes alternate which way the axe swings
     this.cooldownShown = true; // whether the dash-back ring has played since the last miss
+    this.head = scene.add.graphics();
+    this.headAngle = 0;
+    this.headFadeFrom = -Infinity; // when the last strike ended, for the arrowhead's fade
+    player.on('destroy', () => this.head.destroy());
   }
 
   get hudValue() {
@@ -84,8 +89,6 @@ export class Berserker extends HeroClass {
     p.nextDashAt = Infinity; // set when the strike ends, by whether it hit
     this.strike = {
       angle,
-      startX: p.x,
-      startY: p.y,
       lastX: p.x,
       lastY: p.y,
       hit: new Set(),
@@ -180,14 +183,31 @@ export class Berserker extends HeroClass {
     const S = this.cfg.strike;
     const strike = this.strike;
     this.strike = null;
+    this.headFadeFrom = now;
     const chained = strike.struckAny && !strike.stopped;
     let cooldown = S.chainCooldownMs;
     if (strike.stopped) cooldown = S.stoppedCooldownMs;
     else if (!strike.struckAny) cooldown = S.missCooldownMs;
     p.nextDashAt = now + cooldown;
     this.cooldownShown = chained;
-    this.scene.fx.streak(strike.startX, strike.startY, p.x, p.y, TUNING.player.radius,
-      this.raging ? RAGE_TINT : MOMENTUM_TINT);
+  }
+
+  // The arrowhead out in front during a strike, fading once it ends. Its barbs span the strike's reach.
+  syncVisuals(now) {
+    const H = this.cfg.strike.head;
+    const g = this.head.clear();
+    if (this.strike) this.headAngle = this.strike.angle;
+    const alpha = this.strike ? 1 : 1 - (now - this.headFadeFrom) / H.fadeMs;
+    if (alpha <= 0) return;
+    const p = this.player;
+    const reach = TUNING.player.radius + this.cfg.strike.hitPad;
+    const color = this.raging ? RAGE_TINT : MOMENTUM_TINT;
+    g.setDepth(p.depth + 0.0002);
+    g.fillStyle(color, alpha);
+    pixelArrowhead(g, p.x, p.y, this.headAngle, H.back, H.length, reach, H.notch);
+    // A bright core along the middle, so the point reads as an edge.
+    g.fillStyle(0xfff1d6, alpha);
+    pixelArrowhead(g, p.x, p.y, this.headAngle, H.back + H.notch, H.length - H.notch, reach * 0.35, 0);
   }
 
   // Fire with a full bar: hit everything around you. Waits for a strike in progress to finish.

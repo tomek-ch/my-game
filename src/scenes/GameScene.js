@@ -260,7 +260,10 @@ export class GameScene extends Phaser.Scene {
     for (const enemy of this.enemies.getChildren()) {
       if (!enemy.dying) enemy.syncVisuals();
     }
-    for (const p of this.livingPlayers()) p.syncVisuals(this.time.now);
+    for (const p of this.livingPlayers()) {
+      p.syncVisuals(this.time.now);
+      p.kit.syncVisuals(this.time.now);
+    }
     this.updateFocus();
   }
 

@@ -117,6 +117,8 @@ export const TUNING = {
         killHitstopBonusMs: 20,
         ghostIntervalMs: 14,
         shake: { duration: 70, intensity: 0.004 },
+        // The arrowhead drawn ahead of you during a strike, as wide as what the strike hits.
+        head: { back: 16, length: 34, notch: 14, fadeMs: 140 },
       },
 
       // Momentum, 0 to max. Drains after a moment without a hit. Hitstop and strikes pause the drain.

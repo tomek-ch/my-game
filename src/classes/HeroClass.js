@@ -29,6 +29,9 @@ export class HeroClass {
   // player.move().
   update(_now, _dt) {}
 
+  // After physics each frame, with the player's own visuals, for anything drawn relative to the player.
+  syncVisuals(_now) {}
+
   // The number the HUD's resource widget shows.
   get hudValue() {
     return 0;
