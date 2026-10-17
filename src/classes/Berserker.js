@@ -36,9 +36,13 @@ export class Berserker extends HeroClass {
     this.side = 1;            // strikes alternate which way the axe swings
     this.cooldownShown = true; // whether the dash-back ring has played since the last miss
     this.head = scene.add.graphics();
+    this.lines = scene.add.graphics(); // the speed lines, drawn behind the hero
     this.headAngle = 0;
     this.headFadeFrom = -Infinity; // when the last strike ended, for the arrowhead's fade
-    player.on('destroy', () => this.head.destroy());
+    player.on('destroy', () => {
+      this.head.destroy();
+      this.lines.destroy();
+    });
   }
 
   get hudValue() {
@@ -193,12 +197,13 @@ export class Berserker extends HeroClass {
     this.cooldownShown = chained;
   }
 
-  // A spearhead out in front during a strike, with speed lines streaming back from it; it all fades
-  // once the strike ends. Brightest along the leading edge and toward the tip.
+  // A spearhead out in front during a strike, with speed lines streaming back from it behind the hero;
+  // it all fades once the strike ends. Brightest along the leading edge and toward the tip.
   syncVisuals(now) {
     const S = this.cfg.strike;
     const H = S.head;
     const g = this.head.clear();
+    const lines = this.lines.clear();
     if (this.strike) this.headAngle = this.strike.angle;
     const alpha = this.strike ? 1 : 1 - (now - this.headFadeFrom) / H.fadeMs;
     if (alpha <= 0) return;
@@ -206,26 +211,28 @@ export class Berserker extends HeroClass {
     const angle = this.headAngle;
     const color = this.raging ? RAGE_TINT : MOMENTUM_TINT;
     g.setDepth(p.depth + 0.0002);
+    lines.setDepth(p.depth - 0.0002);
 
     const L = S.speedLines;
     const ux = Math.cos(angle);
     const uy = Math.sin(angle);
     const flicker = Math.floor(now / L.flickerMs);
+    const spread = H.halfWidth - L.halfWidth; // the outer lines' edges line up with the shoulders
     for (let i = 0; i < L.count; i++) {
-      const side = (i / (L.count - 1)) * 2 - 1; // -1 to 1 across the spread
-      const off = side * L.spread;
-      // Each line starts just behind the head's back edge (or the shoulder points, past them).
-      const t = Math.min(Math.abs(off) / H.halfWidth, 1);
-      const start = H.back - H.sweep * t * t - 2;
+      const side = (i / (L.count - 1)) * 2 - 1; // -1 to 1 across the head
+      const off = side * spread;
+      // Each line starts a little inside the head's back edge, so it grows out of it.
+      const t = Math.abs(off) / H.halfWidth;
+      const start = H.back - H.sweep * t * t + 3;
       const x = p.x + ux * start - uy * off;
       const y = p.y + uy * start + ux * off;
       const wake = L.innerLength + (1 - L.innerLength) * Math.abs(side);
       const len = L.length * wake * (1 - L.jitter * noise(i, flicker));
       const fill = i % 2 ? color : EDGE_TINT;
-      g.fillStyle(fill, 0.9 * alpha);
-      pixelSpike(g, x, y, angle + Math.PI, len, L.halfWidth, (f) => f < 0.45);
-      g.fillStyle(fill, 0.45 * alpha);
-      pixelSpike(g, x, y, angle + Math.PI, len, L.halfWidth, (f) => f >= 0.45);
+      lines.fillStyle(fill, 0.95 * alpha);
+      pixelSpike(lines, x, y, angle + Math.PI, len, L.halfWidth, (f) => f < 0.6);
+      lines.fillStyle(fill, 0.6 * alpha);
+      pixelSpike(lines, x, y, angle + Math.PI, len, L.halfWidth, (f) => f >= 0.6);
     }
 
     const draw = (fill, a, pick) => {
