@@ -101,12 +101,12 @@ export class Berserker extends HeroClass {
     if (!this.cooldownShown && !this.strike && now >= p.nextDashAt) {
       this.cooldownShown = true;
       this.scene.fx.readyRing(p, TUNING.player.radius, MOMENTUM_TINT);
-      sfx.dashReady();
+      sfx.dashReady(this.player);
     }
     if (!this.leapShown && !this.leap && now >= this.nextLeapAt) {
       this.leapShown = true;
       this.scene.fx.readyRing(p, TUNING.player.radius * 1.4);
-      sfx.dashReady();
+      sfx.dashReady(this.player);
     }
   }
 
@@ -138,7 +138,7 @@ export class Berserker extends HeroClass {
     const rest = Phaser.Math.DegToRad(65);
     p.swingWeapon(angle - this.side * swing, angle + this.side * rest, S.durationMs, this.side, now);
     this.scene.fx.dashStart(p, angle);
-    sfx.dash();
+    sfx.dash(this.player);
   }
 
   // Hits every enemy the player's body passed (with hitPad to spare) between last frame and this one,
@@ -201,10 +201,10 @@ export class Berserker extends HeroClass {
     const firstHit = !strike.struckAny;
     strike.struckAny = true;
     this.gain(hits * this.cfg.meter.perHit + kills * this.cfg.meter.perKill, now);
-    if (hits > kills) sfx.hit(raging);
+    if (hits > kills) sfx.hit(raging, this.player);
     const freeze = (firstHit ? S.hitstopMs : S.chainHitstopMs) + (kills > 0 ? S.killHitstopBonusMs : 0);
     scene.hitstop(freeze, p, ...struck);
-    scene.fx.shake(S.shake);
+    scene.fx.shake(S.shake, this.player);
 
     if (stopped) {
       // Bounced off: back the way you came, briefly out of control, and the chain is broken.
@@ -360,8 +360,8 @@ export class Berserker extends HeroClass {
     sfx.bruteSlam(p.x, p.y);
     scene.fx.slam(p.x, p.y, radius, raging ? RAGE_TINT : MOMENTUM_TINT);
     scene.fx.squash(p, 0.35, 160);
-    scene.fx.shake(J.shake);
-    if (hits > kills) sfx.hit(raging);
+    scene.fx.shake(J.shake, this.player);
+    if (hits > kills) sfx.hit(raging, this.player);
     if (hits > 0) {
       scene.hitstop(J.hitstopMs, p, ...struck);
       // Back into the chain straight away.
@@ -379,7 +379,7 @@ export class Berserker extends HeroClass {
     if (p.isDashing || now - c.dashQueuedAt > W.bufferMs) return;
     c.dashQueuedAt = -Infinity;
     if (this.meter < W.cost) {
-      sfx.shotEmpty();
+      sfx.shotEmpty(this.player);
       scene.hud.shakeResource(this.playerIndex);
       return;
     }
@@ -410,9 +410,9 @@ export class Berserker extends HeroClass {
     p.shield(now + W.invulnMs);
     scene.fx.slash(p, from, { range: W.radius, arcDeg: 360, sweep: this.side, finisher: true, color: RAGE_TINT });
     scene.fx.slam(p.x, p.y, W.radius, MOMENTUM_TINT);
-    scene.fx.shake(W.shake);
-    sfx.whirl();
-    if (hits > kills) sfx.hit(true);
+    scene.fx.shake(W.shake, this.player);
+    sfx.whirl(this.player);
+    if (hits > kills) sfx.hit(true, this.player);
     if (hits > 0) scene.hitstop(W.hitstopMs, p, ...struck);
 
     // Strike straight out of the spin.
@@ -443,7 +443,7 @@ export class Berserker extends HeroClass {
     const cost = this.cfg.spin.cost;
     if (Math.floor(this.meter / cost) > Math.floor(before / cost)) {
       this.scene.fx.readyRing(p, TUNING.player.radius, RAGE_TINT);
-      sfx.shotReady();
+      sfx.shotReady(this.player);
     } else if (this.meter >= M.rageAt && before < M.rageAt) {
       this.scene.fx.readyRing(p, TUNING.player.radius, MOMENTUM_TINT);
     }

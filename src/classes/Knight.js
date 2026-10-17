@@ -54,7 +54,7 @@ export class Knight extends HeroClass {
     const angle = c.move.lengthSq() > 0 ? c.move.angle() : p.aimAngle;
     p.dash(angle, now, D);
     this.scene.fx.dashStart(p, angle);
-    sfx.dash();
+    sfx.dash(p);
     this.dashWasReady = false;
   }
 
@@ -89,7 +89,7 @@ export class Knight extends HeroClass {
     const half = Phaser.Math.DegToRad(swing.arcDeg) / 2;
     p.swingWeapon(angle - half * swing.sweep, angle + half * swing.sweep,
       swing.finisher ? SWORD_SWING_MS.finisher : SWORD_SWING_MS.normal, swing.sweep, now);
-    sfx.swing(swing.finisher);
+    sfx.swing(swing.finisher, this.player);
 
     // Resolve hits from where the step ends, so the swing lands where it's drawn.
     const ox = p.x + Math.cos(angle) * stepDist;
@@ -120,10 +120,10 @@ export class Knight extends HeroClass {
       else struck.push(enemy);
     }
 
-    if (hits > kills) sfx.hit(swing.finisher);
+    if (hits > kills) sfx.hit(swing.finisher, this.player);
     if (hits > 0) {
       scene.hitstop(swing.hitstopMs + (kills > 0 ? M.killHitstopBonusMs : 0), p, ...struck);
-      scene.fx.shake(swing.shake);
+      scene.fx.shake(swing.shake, this.player);
     }
     this.gainPips(hits * this.cfg.ranged.hitPips);
   }
@@ -134,7 +134,7 @@ export class Knight extends HeroClass {
     this.pips = Math.min(this.pips + pips, R.maxCharges * R.pipsPerCharge);
     if (Math.floor(this.pips / R.pipsPerCharge) > before) {
       this.scene.fx.readyRing(this.player, TUNING.player.radius, BOLT_TINT);
-      sfx.shotReady();
+      sfx.shotReady(this.player);
     }
   }
 
@@ -147,7 +147,7 @@ export class Knight extends HeroClass {
     if (p.isDashing || now < this.nextShotAt || now - c.shootQueuedAt > R.bufferMs) return;
     c.shootQueuedAt = -Infinity;
     if (this.pips < R.pipsPerCharge) {
-      sfx.shotEmpty();
+      sfx.shotEmpty(this.player);
       scene.hud.shakeResource(this.playerIndex);
       return;
     }
@@ -171,10 +171,11 @@ export class Knight extends HeroClass {
     bolt.maxRange = R.range;
     bolt.cfg = R;
     bolt.pierced = new Set();
+    bolt.owner = this.player;
 
     p.body.velocity.add(new Phaser.Math.Vector2().setToPolar(angle, -R.recoil));
-    sfx.shoot();
+    sfx.shoot(this.player);
     scene.fx.hitSparks(x, y);
-    scene.fx.shake(R.shake);
+    scene.fx.shake(R.shake, this.player);
   }
 }

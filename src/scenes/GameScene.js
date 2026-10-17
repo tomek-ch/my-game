@@ -15,6 +15,7 @@ import { CLASSES } from '../classes/index.js';
 import { MirrorSender } from '../net/mirror.js';
 import { EventRecorder } from '../net/events.js';
 import { CameraFocus, leanCamera, watchedPlayers } from '../camera.js';
+import { localPlayer } from '../localPlayer.js';
 
 const MAX_PLAYERS = 2;
 const LEASH_MARGIN = 40; // local co-op players can't walk further apart than the screen, minus this
@@ -23,7 +24,7 @@ const BOSS_AT = Number(new URLSearchParams(location.search).get('boss') ?? NaN);
 const SNAPSHOT_INTERVAL_MS = 50; // how often an online host sends the guest what's on screen
 // The one-off effects an online guest is told about (see src/net/events.js). The rest of Fx works on
 // sprites and graphics, which reach the guest with the screen.
-const GUEST_FX = ['hitSparks', 'bloodBurst', 'dashDust', 'ember', 'projectileTrail'];
+const GUEST_FX = ['hitSparks', 'bloodBurst', 'dashDust', 'ember', 'projectileTrail', 'shake', 'hurtFlash'];
 const GUEST_HUD = ['announceBoss', 'bossSlain', 'banner', 'shakeResource'];
 
 export class GameScene extends Phaser.Scene {
@@ -49,6 +50,7 @@ export class GameScene extends Phaser.Scene {
     this.mirror = this.link ? new MirrorSender(this) : null; // see syncGuest()
 
     const coop = this.playerCount > 1;
+    localPlayer.slot = this.link ? 0 : null; // online the host plays P1; otherwise every player is here
     this.players = [];
     for (let i = 0; i < this.playerCount; i++) {
       const controls = createControls(this, this.devices[i], this.link);
@@ -56,6 +58,7 @@ export class GameScene extends Phaser.Scene {
       const Kit = CLASSES[this.classes[i]];
       const player = new Player(this, x, H / 2, { hero: Kit.heroes[i % Kit.heroes.length], weapon: Kit.weapon, controls });
       player.kit = new Kit(this, player);
+      player.slot = i; // whose effects are whose, see localPlayer.js
       this.players.push(player);
     }
     this.enemies = this.physics.add.group();
@@ -108,10 +111,10 @@ export class GameScene extends Phaser.Scene {
     this.hud = new Hud(this, TUNING.player.maxHp, this.classes.map((id) => CLASSES[id]));
 
     if (this.link) {
-      this.recorder = new EventRecorder();
+      // A player passed to an effect (whose it is) goes as their slot and where they are.
+      this.recorder = new EventRecorder((arg) => (arg instanceof Player ? { slot: arg.slot, x: arg.x, y: arg.y } : arg));
       this.recorder.record('sfx', sfx, SOUNDS, { sounds: true });
       this.recorder.record('fx', this.fx, GUEST_FX);
-      this.recorder.record('cam', this.cameras.main, ['shake', 'flash']);
       this.recorder.record('hud', this.hud, GUEST_HUD);
       // After syncVisuals, so the guest gets this frame's picture. It keeps going after game over.
       this.events.on('postupdate', this.syncGuest, this);
@@ -239,7 +242,7 @@ export class GameScene extends Phaser.Scene {
     const damage = R.damage + (R.pierce ? R.pierceBonus * bolt.pierced.size : 0);
     bolt.pierced.add(enemy);
     const dir = bolt.body.velocity.clone().normalize();
-    this.fx.shake(R.hitShake);
+    this.fx.shake(R.hitShake, bolt.owner);
     const hit = { damage, dir, knockback: R.knockback, stunMs: R.stunMs, heavy: R.heavy };
     if (this.strikeEnemy(enemy, hit, now, R.heavy ? 0.4 : 0.2)) {
       this.hitstop(R.killHitstopMs, bolt);
@@ -445,14 +448,14 @@ export class GameScene extends Phaser.Scene {
     player.hurt(damage, dir, now, knockback);
 
     this.hitstop(TUNING.hurtFx.hitstopMs, player, source);
-    this.fx.shake(TUNING.hurtFx.shake);
-    this.cameras.main.flash(120, 120, 20, 40);
+    this.fx.shake(TUNING.hurtFx.shake, player);
+    this.fx.hurtFlash(player);
 
     if (player.hp <= 0) {
-      sfx.death();
+      sfx.death(player);
       this.killPlayer(player);
     } else {
-      sfx.hurt();
+      sfx.hurt(player);
       this.fx.flash(player, 90);
     }
     return true;

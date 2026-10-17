@@ -75,7 +75,7 @@ export class Mage extends HeroClass {
     if (!this.blinkShown && now >= this.nextBlinkAt) {
       this.blinkShown = true;
       this.scene.fx.readyRing(p, TUNING.player.radius, BLINK_TINT);
-      sfx.dashReady();
+      sfx.dashReady(this.player);
     }
   }
 
@@ -105,7 +105,7 @@ export class Mage extends HeroClass {
   // Spends `cost` mana, or rattles the bar and returns false if there isn't enough.
   spend(cost) {
     if (this.mana < cost) {
-      sfx.shotEmpty();
+      sfx.shotEmpty(this.player);
       this.scene.hud.shakeResource(this.playerIndex);
       return false;
     }
@@ -120,7 +120,7 @@ export class Mage extends HeroClass {
     const cost = this.cfg.fireball.cost;
     if (before < cost && this.mana >= cost) {
       this.scene.fx.readyRing(this.player, TUNING.player.radius, MANA_TINT);
-      sfx.shotReady();
+      sfx.shotReady(this.player);
     }
   }
 
@@ -160,11 +160,12 @@ export class Mage extends HeroClass {
     zap.maxRange = Z.range;
     zap.cfg = Z;
     zap.pierced = new Set();
+    zap.owner = this.player;
     zap.hitSound = 'zapHit';
     zap.onHit = () => this.gainMana(Z.mana);
 
     scene.fx.projectileTrail(x, y, ZAP_TINT, 3);
-    sfx.zap();
+    sfx.zap(this.player);
   }
 
   // Fire (right click) lobs a fireball onto the aim.
@@ -206,7 +207,7 @@ export class Mage extends HeroClass {
     });
 
     this.flickStaff(Math.atan2(to.y - p.y, to.x - p.x), now);
-    sfx.fireballThrow();
+    sfx.fireballThrow(this.player);
   }
 
   // The fireball lands: hit and ignite everything in the blast, and leave the ground burning.
@@ -230,7 +231,7 @@ export class Mage extends HeroClass {
 
     sfx.fireballBoom(x, y);
     scene.fx.slam(x, y, F.radius, FIRE_TINT);
-    scene.fx.shake(F.shake);
+    scene.fx.shake(F.shake, this.player);
     if (struck.length > 0) scene.hitstop(F.hitstopMs, ...struck);
     this.burnGround(x, y);
   }
@@ -299,7 +300,7 @@ export class Mage extends HeroClass {
     scene.fx.hitSparks(p.x, p.y);
     scene.fx.readyRing(p, TUNING.player.radius, BLINK_TINT);
     scene.fx.squash(p, 0.3, 120);
-    sfx.blink();
+    sfx.blink(this.player);
   }
 
   // With a stick, a small ring where a fireball would land, since there's no cursor to show it.

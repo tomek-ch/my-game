@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { TUNING } from '../tuning.js';
+import { isLocal } from '../localPlayer.js';
 
 const A = TUNING.audio;
 const NOOP = { stop() {} };
@@ -7,6 +8,9 @@ const MUTE_KEY = 'my-game:muted';
 
 // Every sound is synthesized with Web Audio: oscillators and filtered noise with short envelopes.
 // Sounds placed in the world (x, y) get quieter with distance from the listener and pan left/right.
+// A player's own sounds take that player (`owner`): they play as they are for the player on this
+// machine, and from where that player is for anyone else; the cues that are only news to their player
+// (a shot or the dash ready again, out of mana) play for them alone. See localPlayer.js.
 class Sfx {
   constructor() {
     this.ctx = null;
@@ -45,24 +49,24 @@ class Sfx {
 
   // ---- Sounds -------------------------------------------------------------------------------
 
-  swing(finisher) {
-    return this.play('swing', null, null, 0, (o) => [
+  swing(finisher, owner) {
+    return this.play('swing', ...this.at(owner), 0, (o) => [
       this.noise(o, { freq: 3200, to: 700, q: 1.4, dur: finisher ? 0.22 : 0.12, vol: finisher ? 0.45 : 0.3 }),
       finisher && this.tone(o, { type: 'triangle', freq: 240, to: 90, dur: 0.2, vol: 0.12 }),
     ]);
   }
 
   // The berserker's whirlwind: a long rising whoosh with a low thump under it.
-  whirl() {
-    return this.play('whirl', null, null, 0, (o) => [
+  whirl(owner) {
+    return this.play('whirl', ...this.at(owner), 0, (o) => [
       this.noise(o, { freq: 600, to: 3600, q: 1.2, dur: 0.3, vol: 0.5 }),
       this.noise(o, { freq: 2800, to: 900, q: 1.2, dur: 0.18, vol: 0.3, delay: 0.12 }),
       this.tone(o, { freq: 150, to: 45, dur: 0.25, vol: 0.6 }),
     ]);
   }
 
-  hit(heavy) {
-    return this.play('hit', null, null, 25, (o) => [
+  hit(heavy, owner) {
+    return this.play('hit', ...this.at(owner), 25, (o) => [
       this.tone(o, { freq: heavy ? 130 : 170, to: heavy ? 35 : 50, dur: heavy ? 0.16 : 0.09, vol: heavy ? 0.9 : 0.6 }),
       this.noise(o, { filter: 'highpass', freq: 2000, dur: 0.03, vol: 0.3 }),
       heavy && this.noise(o, { filter: 'lowpass', freq: 900, to: 200, dur: 0.14, vol: 0.45 }),
@@ -76,8 +80,8 @@ class Sfx {
     ]);
   }
 
-  shoot() {
-    return this.play('shoot', null, null, 0, (o) => [
+  shoot(owner) {
+    return this.play('shoot', ...this.at(owner), 0, (o) => [
       this.tone(o, { type: 'square', freq: 700, to: 140, dur: 0.18, vol: 0.12 }),
       this.tone(o, { freq: 160, to: 50, dur: 0.16, vol: 0.5 }),
       this.noise(o, { freq: 3000, to: 600, q: 0.8, dur: 0.2, vol: 0.35 }),
@@ -93,8 +97,9 @@ class Sfx {
   }
 
   // Bright rising chime when a shot finishes charging.
-  shotReady() {
-    return this.play('shotReady', null, null, 0, (o) => [
+  shotReady(owner) {
+    if (!isLocal(owner)) return NOOP; // a cue for its player only
+    return this.play('shotReady', ...this.at(owner), 0, (o) => [
       this.tone(o, { type: 'triangle', freq: 880, dur: 0.06, vol: 0.1 }),
       this.tone(o, { type: 'triangle', freq: 1320, dur: 0.08, vol: 0.1, delay: 0.05 }),
       this.tone(o, { freq: 2640, dur: 0.1, vol: 0.04, delay: 0.05 }),
@@ -102,8 +107,9 @@ class Sfx {
   }
 
   // Dull click for trying to shoot without a charge.
-  shotEmpty() {
-    return this.play('shotEmpty', null, null, 80, (o) => [
+  shotEmpty(owner) {
+    if (!isLocal(owner)) return NOOP; // a cue for its player only
+    return this.play('shotEmpty', ...this.at(owner), 80, (o) => [
       this.tone(o, { type: 'square', freq: 140, to: 90, dur: 0.06, vol: 0.06 }),
       this.noise(o, { filter: 'lowpass', freq: 900, dur: 0.03, vol: 0.15 }),
     ]);
@@ -116,30 +122,31 @@ class Sfx {
     ]);
   }
 
-  dash() {
-    return this.play('dash', null, null, 0, (o) => [
+  dash(owner) {
+    return this.play('dash', ...this.at(owner), 0, (o) => [
       this.noise(o, { freq: 400, to: 2400, q: 0.8, dur: 0.15, vol: 0.35 }),
       this.tone(o, { freq: 300, to: 600, dur: 0.1, vol: 0.05 }),
     ]);
   }
 
-  dashReady() {
-    return this.play('dashReady', null, null, 0, (o) => [
+  dashReady(owner) {
+    if (!isLocal(owner)) return NOOP; // a cue for its player only
+    return this.play('dashReady', ...this.at(owner), 0, (o) => [
       this.tone(o, { freq: 1320, dur: 0.05, vol: 0.05 }),
       this.tone(o, { freq: 1760, dur: 0.06, vol: 0.05, delay: 0.045 }),
     ]);
   }
 
-  hurt() {
-    return this.play('hurt', null, null, 0, (o) => [
+  hurt(owner) {
+    return this.play('hurt', ...this.at(owner), 0, (o) => [
       this.tone(o, { type: 'sawtooth', freq: 220, to: 70, dur: 0.22, vol: 0.2 }),
       this.tone(o, { freq: 95, to: 40, dur: 0.2, vol: 0.7 }),
       this.noise(o, { filter: 'lowpass', freq: 1600, dur: 0.15, vol: 0.45 }),
     ]);
   }
 
-  death() {
-    return this.play('death', null, null, 0, (o) => [
+  death(owner) {
+    return this.play('death', ...this.at(owner), 0, (o) => [
       this.tone(o, { type: 'sawtooth', freq: 300, to: 40, dur: 0.9, vol: 0.22 }),
       this.tone(o, { freq: 110, to: 30, dur: 0.6, vol: 0.7 }),
       this.noise(o, { filter: 'lowpass', freq: 1000, to: 100, dur: 0.7, vol: 0.4 }),
@@ -252,8 +259,8 @@ class Sfx {
   }
 
   // The mage's throw: a soft whoosh that climbs as the fireball leaves the hand.
-  fireballThrow() {
-    return this.play('fireballThrow', null, null, 0, (o) => [
+  fireballThrow(owner) {
+    return this.play('fireballThrow', ...this.at(owner), 0, (o) => [
       this.noise(o, { freq: 500, to: 1800, q: 0.9, dur: 0.18, vol: 0.3 }),
       this.tone(o, { type: 'triangle', freq: 220, to: 440, dur: 0.12, vol: 0.08 }),
     ]);
@@ -271,9 +278,9 @@ class Sfx {
   }
 
   // The mage's zap: a short electric buzz, a little different each time.
-  zap() {
+  zap(owner) {
     const f = 1500 + Math.random() * 500;
-    return this.play('zap', null, null, 40, (o) => [
+    return this.play('zap', ...this.at(owner), 40, (o) => [
       this.tone(o, { type: 'sawtooth', freq: f, to: f * 0.4, dur: 0.06, vol: 0.05 }),
       this.noise(o, { filter: 'highpass', freq: 5000, dur: 0.04, vol: 0.12 }),
     ]);
@@ -289,8 +296,8 @@ class Sfx {
   }
 
   // A quick pop out and back in.
-  blink() {
-    return this.play('blink', null, null, 0, (o) => [
+  blink(owner) {
+    return this.play('blink', ...this.at(owner), 0, (o) => [
       this.tone(o, { freq: 1200, to: 300, dur: 0.06, vol: 0.12 }),
       this.tone(o, { freq: 400, to: 1600, dur: 0.08, vol: 0.1, delay: 0.05 }),
       this.noise(o, { freq: 2000, to: 5000, dur: 0.1, vol: 0.15 }),
@@ -298,6 +305,12 @@ class Sfx {
   }
 
   // ---- Synth plumbing -----------------------------------------------------------------------
+
+  // Where a player's sound plays from: nowhere in particular (full volume, centred) for the player on
+  // this machine, where they stand for anyone else.
+  at(owner) {
+    return isLocal(owner) ? [null, null] : [owner.x, owner.y];
+  }
 
   // Builds a voice (gain + pan) for a sound, runs `build` to attach sources, and returns a handle
   // whose stop() cuts it short. Skips the sound if audio isn't running or it played < gapMs ago.
@@ -394,5 +407,5 @@ class Sfx {
 export const sfx = new Sfx();
 
 // The sound effects themselves, by method name: everything but the setup and the synth plumbing.
-const NOT_SOUNDS = ['constructor', 'init', 'toggleMute', 'play', 'tone', 'noise', 'envelope', 'track'];
+const NOT_SOUNDS = ['constructor', 'init', 'toggleMute', 'at', 'play', 'tone', 'noise', 'envelope', 'track'];
 export const SOUNDS = Object.getOwnPropertyNames(Sfx.prototype).filter((name) => !NOT_SOUNDS.includes(name));

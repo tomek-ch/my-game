@@ -3,6 +3,7 @@ import { TUNING } from './tuning.js';
 import { ART_SCALE } from './art.js';
 import { BLOOD, FIRE_TINT, SPLAT_VARIANTS } from './textures.js';
 import { pixelSector } from './pixelShapes.js';
+import { isLocal } from './localPlayer.js';
 
 const S = ART_SCALE;
 const BLOOD_DEPTH = 1;    // stains: above the floor, below shadows and characters
@@ -80,8 +81,14 @@ export class Fx {
     this.trail.emitParticleAt(x, y, count);
   }
 
-  shake({ duration, intensity }) {
-    this.scene.cameras.main.shake(duration, intensity, true);
+  // owner: the player whose hit or hurt this is, to shake only their screen online; null for everyone.
+  shake({ duration, intensity }, owner = null) {
+    if (isLocal(owner)) this.scene.cameras.main.shake(duration, intensity, true);
+  }
+
+  // The screen flashes red when `owner` is hurt (theirs only, online).
+  hurtFlash(owner) {
+    if (isLocal(owner)) this.scene.cameras.main.flash(120, 120, 20, 40);
   }
 
   flash(sprite, ms = 70) {

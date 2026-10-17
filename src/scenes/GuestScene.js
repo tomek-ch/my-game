@@ -9,6 +9,7 @@ import { MirrorReceiver } from '../net/mirror.js';
 import { EventPlayer } from '../net/events.js';
 import { Fx } from '../fx.js';
 import { sfx } from '../audio/sfx.js';
+import { localPlayer } from '../localPlayer.js';
 import { CameraFocus, leanCamera, watchedPlayers } from '../camera.js';
 
 // The guest's side of an online game. The host runs the whole game and sends what's on screen several
@@ -41,11 +42,12 @@ export class GuestScene extends Phaser.Scene {
     this.status = pixelText(this, width / 2, 30, 'Connected - waiting for the host', 2).setOrigin(0.5).setDepth(1000);
 
     this.mirror = new MirrorReceiver(this);
+    localPlayer.slot = 1; // effects that are P1's play as theirs, not ours
     this.fx = new Fx(this);
     sfx.init(this.sound.context);
     sfx.listener = this.cameraFocus.point;
     this.input.keyboard.on('keydown-M', () => sfx.toggleMute());
-    this.effects = new EventPlayer({ sfx, fx: this.fx, cam: this.cameras.main, hud: null }); // hud: see showSnapshot
+    this.effects = new EventPlayer({ sfx, fx: this.fx, hud: null }); // hud: see showSnapshot
     this.controls = new MouseKeyboardControls(this);
     this.sentPresses = Object.fromEntries(PRESSES.map((key) => [key, this.controls[key]]));
     this.lastInput = null;

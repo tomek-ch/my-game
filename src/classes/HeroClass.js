@@ -47,7 +47,7 @@ export class HeroClass {
     const ready = !p.isDashing && now >= p.nextDashAt;
     if (ready && !this.dashWasReady) {
       this.scene.fx.readyRing(p, TUNING.player.radius);
-      sfx.dashReady();
+      sfx.dashReady(p);
     }
     this.dashWasReady = ready;
   }
