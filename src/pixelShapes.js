@@ -68,14 +68,28 @@ export function pixelLine(g, x1, y1, x2, y2, width) {
   });
 }
 
-// An arrowhead pointing along `angle`: its tip `back + length` px from (cx, cy), its two barbs `back`
-// px out and `halfWidth` to each side, and a notch cut `notch` px into the back between them.
-export function pixelArrowhead(g, cx, cy, angle, back, length, halfWidth, notch) {
+// A swept spearhead pointing along `angle`, the shape of a dash cutting the air: a needle tip that
+// widens into rounded shoulders, and from the shoulders two barbs sweeping back into spikes that trail
+// behind. shape, all in px: the shoulders are `back` ahead of (cx, cy) and `halfWidth` to each side;
+// the tip is `length` ahead of the shoulders; the spikes end `tail` behind the shoulders, `tailWidth`
+// to each side; the cut between the barbs reaches `notch` ahead of the shoulders.
+// Fills the pixels for which pick(f, rim) is true: f runs from 0 at the spike points to 1 at the tip,
+// and rim is true within `rim` px of the outer edge.
+export function pixelSpearhead(g, cx, cy, angle, shape, pick) {
+  const { back, length, halfWidth: w, tail, tailWidth: tw, notch, rim } = shape;
   const ux = Math.cos(angle);
   const uy = Math.sin(angle);
-  return fillPixels(g, cx, cy, back + length, (x, y) => {
-    const u = (x - cx) * ux + (y - cy) * uy - back;
-    const v = Math.abs((x - cx) * uy - (y - cy) * ux) / halfWidth;
-    return v <= 1 && u <= length * (1 - v) && u >= notch * (1 - v);
+  return fillPixels(g, cx, cy, back + length + w, (x, y) => {
+    const u = (x - cx) * ux + (y - cy) * uy - back; // ahead of the shoulders
+    const v = Math.abs((x - cx) * uy - (y - cy) * ux);
+    if (u > length || u < -tail) return false;
+    // Ahead of the shoulders a sine profile: zero width at the tip, round where it meets them.
+    // Behind, the outer edge sweeps in toward the spike points.
+    const outer = u >= 0
+      ? w * Math.sin((Math.PI / 2) * (length - u) / length) ** 1.6
+      : w + (tw - w) * (-u / tail) ** 1.5;
+    if (v > outer) return false;
+    if (u < notch && v < tw * ((notch - u) / (notch + tail)) ** 0.6) return false;
+    return pick((u + tail) / (length + tail), v > outer - rim);
   });
 }

@@ -3,10 +3,11 @@ import { TUNING } from '../tuning.js';
 import { sfx } from '../audio/sfx.js';
 import { HeroClass } from './HeroClass.js';
 import { isFrozen } from '../entities/hitstop.js';
-import { pixelArrowhead } from '../pixelShapes.js';
+import { pixelSpearhead } from '../pixelShapes.js';
 
 export const MOMENTUM_TINT = 0xff8a3d;
 export const RAGE_TINT = 0xff3b3b;
+const EDGE_TINT = 0xffe2b8; // the strike's leading edge
 const STRIKE_SWING_DEG = 110; // the axe starts this far to one side of the strike and ends at rest on the other
 
 // No plain dash: the attack is a dash strike toward the aim that cuts through everything in its path.
@@ -192,7 +193,8 @@ export class Berserker extends HeroClass {
     this.cooldownShown = chained;
   }
 
-  // The arrowhead out in front during a strike, fading once it ends. Its barbs span the strike's reach.
+  // A spearhead out in front during a strike, fading once it ends: brightest along its leading edge
+  // and toward the tip, thinning out into the spikes trailing behind.
   syncVisuals(now) {
     const H = this.cfg.strike.head;
     const g = this.head.clear();
@@ -200,14 +202,17 @@ export class Berserker extends HeroClass {
     const alpha = this.strike ? 1 : 1 - (now - this.headFadeFrom) / H.fadeMs;
     if (alpha <= 0) return;
     const p = this.player;
-    const reach = TUNING.player.radius + this.cfg.strike.hitPad;
     const color = this.raging ? RAGE_TINT : MOMENTUM_TINT;
+    const draw = (fill, a, pick) => {
+      g.fillStyle(fill, a * alpha);
+      pixelSpearhead(g, p.x, p.y, this.headAngle, H, pick);
+    };
     g.setDepth(p.depth + 0.0002);
-    g.fillStyle(color, alpha);
-    pixelArrowhead(g, p.x, p.y, this.headAngle, H.back, H.length, reach, H.notch);
-    // A bright core along the middle, so the point reads as an edge.
-    g.fillStyle(0xfff1d6, alpha);
-    pixelArrowhead(g, p.x, p.y, this.headAngle, H.back + H.notch, H.length - H.notch, reach * 0.35, 0);
+    draw(color, 0.6, (f, rim) => !rim && f < 0.3);
+    draw(color, 0.8, (f, rim) => !rim && f >= 0.3 && f < 0.55);
+    draw(color, 0.95, (f, rim) => !rim && f >= 0.55);
+    draw(EDGE_TINT, 1, (f, rim) => rim && f >= 0.15);
+    draw(EDGE_TINT, 0.75, (f, rim) => rim && f < 0.15);
   }
 
   // Fire with a full bar: hit everything around you. Waits for a strike in progress to finish.
