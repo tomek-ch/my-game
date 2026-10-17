@@ -195,7 +195,8 @@ export class Hud {
     g.fillStyle(broken ? (flash ? 0xffffff : 0xffe08a) : BOSS_POISE).fillRect(x + s, py, fill(poise), BOSS_POISE_H * s);
   }
 
-  showGameOver({ kills, secs }) {
+  // hint: the line telling how to play again.
+  showGameOver({ kills, secs }, hint = 'Click or press R to restart') {
     const scene = this.scene;
     const { width, height } = scene.cameras.main;
     const shade = scene.add.rectangle(0, 0, width, height, 0x0b0710, 0.6)
@@ -208,9 +209,8 @@ export class Hud {
 
     const time = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
     pixelText(scene, width / 2, height / 2 + 20, `${kills} kills  -  ${time}`, UI).setOrigin(0.5).setDepth(DEPTH);
-    const hint = pixelText(scene, width / 2, height / 2 + 80, 'Click or press R to restart', 2)
-      .setOrigin(0.5).setDepth(DEPTH);
-    scene.tweens.add({ targets: hint, alpha: 0.3, duration: 600, yoyo: true, repeat: -1 });
+    const hintText = pixelText(scene, width / 2, height / 2 + 80, hint, 2).setOrigin(0.5).setDepth(DEPTH);
+    scene.tweens.add({ targets: hintText, alpha: 0.3, duration: 600, yoyo: true, repeat: -1 });
   }
 }
 

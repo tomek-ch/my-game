@@ -7,6 +7,7 @@ export const TUNING = {
     followLerp: 0.12,     // lower = lazier camera
     aimLookahead: 0.18,   // how far the camera leans toward the mouse (fraction of cursor offset)
     lookaheadLerp: 0.08,
+    focusFadeMs: 1000,    // how long the camera takes to move over when who it watches changes (a death)
   },
 
   player: {

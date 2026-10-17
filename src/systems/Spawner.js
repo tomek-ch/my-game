@@ -5,7 +5,8 @@ const S = TUNING.spawn;
 // ?enemy=<type> in the URL spawns only that type, for testing.
 const FORCED_TYPE = new URLSearchParams(location.search).get('enemy');
 
-// Spawns enemies just outside the camera view, faster as time goes on.
+// Spawns enemies just outside what the players can see, faster as time goes on.
+const PICK_TRIES = 8; // tries for a point no screen shows, before settling for one that one might
 export class Spawner {
   constructor(scene, spawn) {
     this.scene = scene;
@@ -54,9 +55,19 @@ export class Spawner {
     return 'grunt';
   }
 
-  // Random point on the perimeter of the camera view grown by a margin, clamped into the world.
+  // A random point just off one of the players' screens, and if possible off all of them.
   pickPoint() {
-    const view = this.scene.cameras.main.worldView;
+    const views = this.scene.views();
+    let p;
+    for (let i = 0; i < PICK_TRIES; i++) {
+      p = this.pointOutside(Phaser.Utils.Array.GetRandom(views));
+      if (!views.some((v) => v.contains(p.x, p.y))) break;
+    }
+    return p;
+  }
+
+  // Random point on the perimeter of `view` grown by a margin, clamped into the world.
+  pointOutside(view) {
     const m = S.offscreenMargin;
     const rect = new Phaser.Geom.Rectangle(view.x - m, view.y - m, view.width + m * 2, view.height + m * 2);
     const p = rect.getRandomPoint();

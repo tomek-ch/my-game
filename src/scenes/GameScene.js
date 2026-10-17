@@ -12,12 +12,14 @@ import { sfx } from '../audio/sfx.js';
 import { createControls } from '../input/controls.js';
 import { freeze, isFrozen, thaw } from '../entities/hitstop.js';
 import { CLASSES } from '../classes/index.js';
+import { MirrorSender } from '../net/mirror.js';
+import { CameraFocus, leanCamera, watchedPlayers } from '../camera.js';
 
 const MAX_PLAYERS = 2;
-const LEASH_MARGIN = 40; // co-op players can't walk further apart than the screen, minus this
+const LEASH_MARGIN = 40; // local co-op players can't walk further apart than the screen, minus this
 // ?boss=<seconds> makes the warden arrive then instead of at its usual time, for testing.
 const BOSS_AT = Number(new URLSearchParams(location.search).get('boss') ?? NaN);
-const VIEW_INTERVAL_MS = 50; // how often an online host tells the guest what to show
+const SNAPSHOT_INTERVAL_MS = 50; // how often an online host sends the guest what's on screen
 
 export class GameScene extends Phaser.Scene {
   constructor() {
@@ -39,6 +41,7 @@ export class GameScene extends Phaser.Scene {
 
     this.physics.world.setBounds(0, 0, W, H);
     const art = addDungeon(this, W, H);
+    this.mirror = this.link ? new MirrorSender(this) : null; // see sendSnapshot()
 
     const coop = this.playerCount > 1;
     this.players = [];
@@ -55,16 +58,19 @@ export class GameScene extends Phaser.Scene {
     // bounce, bounce 0) on every touch, even in overlap-only mode, so packed enemies crawled.
     // (The world is rebuilt on restart, so these listeners need no cleanup.)
     this.physics.world.on('worldstep', this.separateEnemies, this);
-    if (coop) this.physics.world.on('worldstep', this.leashPlayers, this);
+    // Online each player has a screen of their own, so nothing has to keep them on one.
+    if (coop && !this.link) this.physics.world.on('worldstep', this.leashPlayers, this);
     this.physics.add.overlap(this.players, this.enemies, (player, enemy) => this.onPlayerTouched(player, enemy));
     this.bolts = this.physics.add.group();
     this.physics.add.overlap(this.bolts, this.enemies, (bolt, enemy) => this.onBoltHit(bolt, enemy));
     this.enemyBullets = this.physics.add.group();
     this.physics.add.overlap(this.players, this.enemyBullets, (player, bullet) => this.onEnemyBulletHit(player, bullet));
 
-    // The camera (and the ears) follow the middle of the living players.
-    this.focus = new Phaser.Math.Vector2();
-    this.updateFocus();
+    // The camera (and the ears) follow the middle of the living players, or online this machine's
+    // player (see updateFocus).
+    this.cameraFocus = new CameraFocus();
+    this.focus = this.cameraFocus.point;
+    this.updateFocus(0);
     const cam = this.cameras.main;
     cam.setBounds(art.x, art.y, art.width, art.height); // includes the north wall above the floor
     cam.startFollow(this.focus, true, TUNING.camera.followLerp, TUNING.camera.followLerp);
@@ -93,9 +99,15 @@ export class GameScene extends Phaser.Scene {
     // sprite is synced here; doing it in update() drew it a frame behind.
     this.events.on('postupdate', this.syncVisuals, this);
     this.events.once('shutdown', () => this.events.off('postupdate', this.syncVisuals, this));
+    if (this.link) {
+      // After syncVisuals, so the guest gets this frame's picture. It keeps going after game over.
+      this.events.on('postupdate', this.sendSnapshot, this);
+      this.events.once('shutdown', () => this.events.off('postupdate', this.sendSnapshot, this));
+      this.runId = Date.now(); // tells the guest a restart from the next snapshot
+      this.nextSnapshotAt = 0;
+    }
 
     this.hud = new Hud(this, TUNING.player.maxHp, this.classes.map((id) => CLASSES[id]));
-    this.nextViewAt = 0;
   }
 
   update(_time, delta) {
@@ -123,20 +135,22 @@ export class GameScene extends Phaser.Scene {
 
     this.updateCameraLookahead();
     this.updateHud(now);
-    this.sendView(now);
   }
 
-  // Online, for now the guest only sees where the camera is and where the players are, enough to aim
-  // with the mouse; the game itself is watched on the host's screen.
-  sendView(now) {
-    if (!this.link || now < this.nextViewAt) return;
-    this.nextViewAt = now + VIEW_INTERVAL_MS;
-    const cam = this.cameras.main;
+  // Online: what the guest needs to show this frame (see src/net/mirror.js), and where the players are,
+  // for its camera and for aiming with the mouse.
+  sendSnapshot() {
+    const now = this.time.now;
+    if (!this.link.open || now < this.nextSnapshotAt) return;
+    this.nextSnapshotAt = now + SNAPSHOT_INTERVAL_MS;
     this.link.send({
-      t: 'view',
-      cam: [Math.round(cam.scrollX), Math.round(cam.scrollY)],
+      t: 'snap',
+      run: this.runId,
+      classes: this.classes,
       players: this.players.map((p) => [Math.round(p.x), Math.round(p.y), p.alive]),
-      over: this.isOver,
+      objects: this.mirror.capture(),
+      hud: this.hudData(this.isOver ? this.overAt : now),
+      over: this.isOver ? this.overStats : null,
     });
   }
 
@@ -321,15 +335,22 @@ export class GameScene extends Phaser.Scene {
       p.syncVisuals(this.time.now);
       p.kit.syncVisuals(this.time.now);
     }
-    this.updateFocus();
+    this.updateFocus(Math.min(this.game.loop.delta, 50) / 1000);
   }
 
-  updateFocus() {
-    const living = this.livingPlayers();
-    if (living.length === 0) return;
-    this.focus.set(0, 0);
-    for (const p of living) this.focus.add(p);
-    this.focus.scale(1 / living.length);
+  updateFocus(dt) {
+    const alive = this.players.map((p) => p.alive);
+    this.cameraFocus.update(this.players, watchedPlayers(alive, this.link ? 0 : null), dt);
+  }
+
+  // The areas of the world on someone's screen, for spawning out of sight: this camera's, and online
+  // the guest's, as it last reported.
+  views() {
+    const cam = this.cameras.main;
+    const views = [cam.worldView];
+    const guestView = this.link && this.players[1].controls.view;
+    if (guestView) views.push(new Phaser.Geom.Rectangle(guestView[0], guestView[1], cam.width, cam.height));
+    return views;
   }
 
   // Keeps co-op players within one screen (minus a margin) of each other, so the camera can always
@@ -443,26 +464,25 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  // Solo with the mouse, the camera leans toward where you aim. In co-op it stays on the middle.
+  // With the mouse and a screen of your own (solo, or online), the camera leans toward where you aim.
+  // On a shared screen it stays on the middle.
   updateCameraLookahead() {
-    const C = TUNING.camera;
-    const cam = this.cameras.main;
-    const pointer = this.players.length === 1 ? this.players[0].controls.pointer ?? null : null;
-    const tx = pointer ? -(pointer.x - cam.width / 2) * C.aimLookahead : 0;
-    const ty = pointer ? -(pointer.y - cam.height / 2) * C.aimLookahead : 0;
-    this.lookahead.x += (tx - this.lookahead.x) * C.lookaheadLerp;
-    this.lookahead.y += (ty - this.lookahead.y) * C.lookaheadLerp;
-    cam.setFollowOffset(this.lookahead.x, this.lookahead.y);
+    const own = this.link || this.players.length === 1 ? this.players[0] : null;
+    leanCamera(this.cameras.main, this.lookahead, own?.alive ? own.controls.pointer ?? null : null);
   }
 
   updateHud(now) {
-    this.hud.update(now, {
+    this.hud.update(now, this.hudData(now));
+  }
+
+  hudData(now) {
+    return {
       players: this.players.map((p) => ({ hp: p.hp, resource: p.kit.hudValue })),
       kills: this.kills,
       secs: Math.floor((now - this.startedAt) / 1000),
       muted: sfx.muted,
       boss: this.boss?.hudInfo ?? null,
-    });
+    };
   }
 
 
@@ -473,9 +493,8 @@ export class GameScene extends Phaser.Scene {
     this.spawner.stop();
     this.physics.world.pause();
 
-    this.hud.showGameOver({ kills: this.kills, secs: Math.floor((this.overAt - this.startedAt) / 1000) });
-    this.nextViewAt = 0; // update() stops here, so tell the guest now
-    this.sendView(this.overAt);
+    this.overStats = { kills: this.kills, secs: Math.floor((this.overAt - this.startedAt) / 1000) };
+    this.hud.showGameOver(this.overStats);
   }
 
   tryRestart() {
