@@ -6,7 +6,15 @@
 export function freeze(sprite, until) {
   if (!sprite?.active || !sprite.body) return;
   sprite.frozenUntil = Math.max(sprite.frozenUntil ?? 0, until);
-  sprite.body.moves = false;
+  const body = sprite.body;
+  if (body.moves) {
+    // Arcade copies a step onto the sprite after update(), but not with moves off: the body would snap
+    // back to the sprite, and every hit cost a frame of travel. So bring the sprite to the body now
+    // (the inverse of Body.updateFromGameObject; nothing to do when no step is pending).
+    sprite.x = body.position.x - sprite.scaleX * (body.offset.x - sprite.displayOriginX);
+    sprite.y = body.position.y - sprite.scaleY * (body.offset.y - sprite.displayOriginY);
+  }
+  body.moves = false;
   sprite.anims?.pause();
 }
 

@@ -185,10 +185,14 @@ export class Berserker extends HeroClass {
     for (const { enemy, cx, cy } of victims) {
       strike.hit.add(enemy);
       const stopper = !raging && enemy.cfg.mass >= S.stopMass;
-      // Flung out of the way: sideways off the path and a little forward.
-      const dir = new Phaser.Math.Vector2(enemy.x - cx, enemy.y - cy);
-      if (dir.lengthSq() < 0.01) dir.set(-fwd.y, fwd.x);
-      dir.normalize().add(fwd.clone().scale(stopper ? 1 : 0.6)).normalize();
+      // Flung out of the way: sideways off the path and a little forward. Sideways by which side of the
+      // path it's on, not away from the nearest point: one just ahead of the hero is nearest the
+      // segment's end, which would fling it straight ahead, into where the strike ends. Dead center, it
+      // goes the way the axe swings.
+      const side = (enemy.x - cx) * -fwd.y + (enemy.y - cy) * fwd.x;
+      const flingSide = Math.abs(side) > 0.1 ? Math.sign(side) : this.side;
+      const dir = new Phaser.Math.Vector2(-fwd.y * flingSide, fwd.x * flingSide);
+      dir.add(fwd.clone().scale(stopper ? 1 : 0.6)).normalize();
       const hit = { damage: raging ? S.rageDamage : S.damage, dir, knockback: S.knockback, heavy: raging };
       hits++;
       if (scene.strikeEnemy(enemy, hit, now, raging ? 0.45 : 0.3)) kills++;

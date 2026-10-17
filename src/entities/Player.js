@@ -64,6 +64,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.dashExitSpeed = 0;
     this.lift = 0; // px the sprite is drawn above the ground, see setLift()
     this.dashInvulnUntil = 0;
+    this.dashGraceMs = 0; // how long the dash in progress keeps you untouchable after it ends
 
     this.weapon = scene.add.image(x, y, 'dungeon', weapon.frame).setScale(ART_SCALE).setOrigin(0.5, weapon.originY);
     this.weaponSide = -1;    // which side of the aim it rests on: -1 or 1
@@ -78,7 +79,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     if (this.dashLeft > 0) {
       this.dashLeft -= dt;
       if (this.dashLeft > 0) vel.copy(this.dashVel);
-      else vel.copy(this.dashVel).setLength(this.dashExitSpeed);
+      else {
+        vel.copy(this.dashVel).setLength(this.dashExitSpeed);
+        this.shield(now + this.dashGraceMs);
+      }
       return;
     }
     if (this.stepLeft > 0) {
@@ -118,6 +122,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.dashLeft = cfg.durationMs / 1000;
     this.dashVel.setToPolar(angle, cfg.distance / this.dashLeft);
     this.dashExitSpeed = cfg.exitSpeed;
+    this.dashGraceMs = cfg.invulnGraceMs;
     this.nextDashAt = now + cfg.durationMs + cfg.cooldownMs;
     this.dashInvulnUntil = now + cfg.durationMs + cfg.invulnGraceMs;
   }
@@ -151,8 +156,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.body.velocity.copy(dir).scale(knockback);
   }
 
+  // A dash keeps you untouchable however long hitstop stretches it, and for its grace after it ends.
   isInvulnerable(now) {
-    return now < this.invulnUntil || now < this.dashInvulnUntil;
+    return now < this.invulnUntil || now < this.dashInvulnUntil || this.isDashing;
   }
 
   // Sweep the weapon from one angle to another over `ms`, then let it settle at rest on `side` of the

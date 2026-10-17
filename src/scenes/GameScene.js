@@ -110,7 +110,13 @@ export class GameScene extends Phaser.Scene {
     // Arcade copies body positions onto sprites after update(), so anything placed relative to a
     // sprite is synced here; doing it in update() drew it a frame behind.
     this.events.on('postupdate', this.syncVisuals, this);
-    this.events.once('shutdown', () => this.events.off('postupdate', this.syncVisuals, this));
+    // Before physics, so a sprite coming out of hitstop moves this frame. Thawed in update(), Arcade had
+    // already stepped it as frozen, while its dash or step counted the frame down: hits cut dashes short.
+    this.events.on('preupdate', this.thawFrozen, this);
+    this.events.once('shutdown', () => {
+      this.events.off('postupdate', this.syncVisuals, this);
+      this.events.off('preupdate', this.thawFrozen, this);
+    });
 
     this.hud = new Hud(this, TUNING.player.maxHp, this.classes.map((id) => CLASSES[id]));
 
@@ -134,9 +140,6 @@ export class GameScene extends Phaser.Scene {
   update(_time, delta) {
     if (this.isOver) return;
     const now = this.time.now;
-
-    this.thawFrozen(now);
-
     const dt = Math.min(delta, 50) / 1000;
     for (const p of this.livingPlayers()) {
       if (isFrozen(p, now)) continue; // buffered presses wait for the hitstop to end
@@ -490,16 +493,22 @@ export class GameScene extends Phaser.Scene {
   }
 
   // Freezes just these sprites (nulls are skipped) for `ms`; everything else carries on.
+  // An enemy's stun waits out the freeze, so one you just hit is still harmless when it thaws.
   hitstop(ms, ...sprites) {
-    const until = this.time.now + ms;
+    const now = this.time.now;
+    const until = now + ms;
     for (const sprite of sprites) {
       if (!sprite) continue;
+      const added = until - Math.max(sprite.frozenUntil ?? 0, now);
+      if (added > 0 && this.enemies.contains(sprite) && sprite.stunUntil > now) sprite.stunUntil += added;
       freeze(sprite, until);
       this.frozen.add(sprite);
     }
   }
 
+  // `now` is this frame's time: in 'preupdate' the scene clock still reads the last frame's.
   thawFrozen(now) {
+    if (this.isOver) return;
     for (const sprite of this.frozen) {
       if (sprite.active && isFrozen(sprite, now)) continue;
       if (sprite.active) thaw(sprite);
