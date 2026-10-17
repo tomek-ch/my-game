@@ -40,6 +40,7 @@ export class Berserker extends HeroClass {
     this.head = scene.add.graphics();
     this.lines = scene.add.graphics(); // the speed lines, drawn behind the hero
     this.headAngle = 0;
+    this.headRaging = false;  // whether the last strike was enraged, for its look while it fades
     this.headFadeFrom = -Infinity; // when the last strike ended, for the arrowhead's fade
     player.on('destroy', () => {
       this.head.destroy();
@@ -69,7 +70,7 @@ export class Berserker extends HeroClass {
     this.drain(now, dt);
 
     if (p.isDashing && now >= this.nextGhostAt) {
-      this.scene.fx.afterimage(p, this.raging ? RAGE_TINT : MOMENTUM_TINT);
+      this.scene.fx.afterimage(p, (this.strike?.raging ?? this.headRaging) ? RAGE_TINT : MOMENTUM_TINT);
       this.nextGhostAt = now + this.cfg.strike.ghostIntervalMs;
     }
     // Only a miss's cooldown is worth announcing; chained strikes are ready again at once.
@@ -96,6 +97,8 @@ export class Berserker extends HeroClass {
     p.nextDashAt = Infinity; // set when the strike ends, by whether it hit
     this.strike = {
       angle,
+      // Decided at launch and kept for the whole strike, even if its hits push the bar past rageAt.
+      raging: this.raging,
       lastX: p.x,
       lastY: p.y,
       hit: new Set(),
@@ -112,7 +115,7 @@ export class Berserker extends HeroClass {
   }
 
   // Hits every enemy the player's body passed (with hitPad to spare) between last frame and this one,
-  // nearest first. A heavy enemy stops the strike unless raging, and nothing past it is hit.
+  // nearest first. A heavy enemy stops the strike unless it's enraged, and nothing past it is hit.
   sweepStrike(now) {
     const p = this.player;
     const scene = this.scene;
@@ -146,7 +149,7 @@ export class Berserker extends HeroClass {
     if (victims.length === 0) return;
     victims.sort((a, b) => a.along - b.along);
 
-    const raging = this.raging;
+    const { raging } = strike;
     let hits = 0;
     let kills = 0;
     let stopped = false;
@@ -206,12 +209,15 @@ export class Berserker extends HeroClass {
     const H = S.head;
     const g = this.head.clear();
     const lines = this.lines.clear();
-    if (this.strike) this.headAngle = this.strike.angle;
+    if (this.strike) {
+      this.headAngle = this.strike.angle;
+      this.headRaging = this.strike.raging;
+    }
     const alpha = this.strike ? 1 : 1 - (now - this.headFadeFrom) / H.fadeMs;
     if (alpha <= 0) return;
     const p = this.player;
     const angle = this.headAngle;
-    const color = this.raging ? RAGE_TINT : MOMENTUM_TINT;
+    const color = this.headRaging ? RAGE_TINT : MOMENTUM_TINT;
     g.setDepth(p.depth + 0.0002);
     lines.setDepth(p.depth - 0.0002);
 
