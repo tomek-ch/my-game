@@ -10,6 +10,9 @@ export const MOMENTUM_TINT = 0xff8a3d;
 export const RAGE_TINT = 0xff3b3b;
 const EDGE_TINT = 0xffe2b8; // the strike's leading edge
 const STRIKE_SWING_DEG = 110; // the axe starts this far to one side of the strike and ends at rest on the other
+const GLOW_STRENGTH = 3;      // the rage glow's outer strength at the top of its pulse
+const GLOW_PULSE_MS = 700;    // one throb of the rage glow
+const GLOW_FADE = 8;          // how fast it comes and goes with rage (per second, exponential)
 
 // No plain dash: the attack is a dash strike toward the aim that cuts through everything in its path,
 // and right click leaps to the aim and slams down, which also gets you out of trouble after a miss.
@@ -49,6 +52,15 @@ export class Berserker extends HeroClass {
     this.headAngle = 0;
     this.headRaging = false;  // whether the last strike was enraged, for its look while it fades
     this.headFadeFrom = -Infinity; // when the last strike ended, for the arrowhead's fade
+    // A red glow around the hero and the axe while raging (WebGL only; the canvas renderer goes without).
+    this.glows = [];
+    for (const o of [player, player.weapon]) {
+      if (!o.preFX) continue;
+      o.preFX.setPadding(8);
+      this.glows.push(o.preFX.addGlow(RAGE_TINT, 0, 0, false, 0.1, 8));
+    }
+    this.glowLevel = 0;       // 0 to 1, eased toward whether we're raging
+    this.lastGlowAt = scene.time.now;
     player.on('destroy', () => {
       this.head.destroy();
       this.lines.destroy();
@@ -221,6 +233,7 @@ export class Berserker extends HeroClass {
   // it all fades once the strike ends. Brightest along the leading edge and toward the tip.
   syncVisuals(now) {
     this.drawLandingSpot();
+    this.syncGlow(now);
     const S = this.cfg.strike;
     const H = S.head;
     const g = this.head.clear();
@@ -265,6 +278,16 @@ export class Berserker extends HeroClass {
     draw(color, 0.8, (f, rim) => !rim && f < 0.5);
     draw(color, 0.95, (f, rim) => !rim && f >= 0.5);
     draw(EDGE_TINT, 1, (f, rim) => rim);
+  }
+
+  // The rage glow fades in past rageAt and out below it, throbbing while it's on.
+  syncGlow(now) {
+    const dt = Math.min(now - this.lastGlowAt, 50) / 1000;
+    this.lastGlowAt = now;
+    const target = this.raging ? 1 : 0;
+    this.glowLevel += (target - this.glowLevel) * Math.min(1, GLOW_FADE * dt);
+    const pulse = 0.65 + 0.35 * Math.sin((now / GLOW_PULSE_MS) * Math.PI * 2);
+    for (const glow of this.glows) glow.outerStrength = GLOW_STRENGTH * this.glowLevel * pulse;
   }
 
   // Fire (right click) leaps toward the aim: to the cursor, or along the stick, at most maxDistance away.

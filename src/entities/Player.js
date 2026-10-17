@@ -219,5 +219,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.setFrame(`${this.hero}_hit_anim_f0`);
     this.setAlpha(1).setTint(0x555566);
     this.weapon.setAlpha(1).setTint(0x555566);
+    // No class effects on a corpse, like the berserker's rage glow.
+    this.preFX?.clear();
+    this.weapon.preFX?.clear();
   }
 }
