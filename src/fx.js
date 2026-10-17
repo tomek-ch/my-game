@@ -9,7 +9,8 @@ const S = ART_SCALE;
 const BLOOD_DEPTH = 1;    // stains: above the floor, below shadows and characters
 const BLOOD_GRAVITY = 700; // droplets arc up and fall back to the floor
 
-// Visual juice: particles, blood, slashes, flashes, shake.
+// Visual juice: particles, blood, slashes, flashes, shake. Effects that follow a player are marked with
+// `attachedTo`, so an online guest can draw its own player's with its player (see GameScene.syncGuest).
 export class Fx {
   constructor(scene) {
     this.scene = scene;
@@ -133,12 +134,14 @@ export class Fx {
       .setTint(color)
       .setAlpha(0.5)
       .setDepth(sprite.depth - 0.001);
+    ghost.attachedTo = sprite;
     this.scene.tweens.add({ targets: ghost, alpha: 0, duration: 180, onComplete: () => ghost.destroy() });
   }
 
   // Expanding ring around `owner`, used to signal the dash is back or a shot is charged.
   readyRing(owner, radius, color = 0x5ce1ff) {
     const g = this.scene.add.graphics().setDepth(9);
+    g.attachedTo = owner;
     const state = { t: 0 };
     const draw = () => {
       const r = radius * (1 + 0.9 * state.t);
@@ -191,6 +194,7 @@ export class Fx {
     const inner = range * (finisher ? 0.35 : 0.5);
     color ??= finisher ? 0xbff3ff : 0xffffff;
     const g = this.scene.add.graphics().setDepth(15);
+    g.attachedTo = owner;
     const state = { t: 0 };
 
     const draw = () => {

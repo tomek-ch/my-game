@@ -29,6 +29,7 @@ const BLENDED = {
   g: { x: 2, y: 3, sx: 4, sy: 5, rotation: 6, alpha: 8 },
 };
 const SNAP_DISTANCE = 100; // px between snapshots past which something jumped (a blink) rather than moved
+const RETIRED_MS = 2000;   // how long a gone ahead object's id is kept from playback, past any delay
 
 const r1 = (v) => Math.round(v * 10) / 10;
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -94,25 +95,37 @@ export class MirrorReceiver {
     this.scene = scene;
     this.objects = new Map(); // id -> game object
     this.entries = new Map(); // id -> its entry in the last snapshot applied
+    // Objects drawn ahead of playback (our own player and what moves with it, see showAhead), which
+    // playback leaves alone; and ones that were, until they're surely out of the snapshots being played.
+    this.ahead = new Set();
+    this.retired = new Map(); // id -> when it went
+    this.aheadCommands = new Map(); // id -> an ahead graphics' newest draw commands, not applied yet
+  }
+
+  create(id, kind) {
+    const o = kind === 'g' ? this.scene.add.graphics() : this.scene.add.image(0, 0, '__DEFAULT');
+    this.objects.set(id, o);
+    return o;
+  }
+
+  isAhead(id) {
+    return this.ahead.has(id) || this.retired.has(id);
   }
 
   apply(entries) {
     const seen = new Set();
     for (const e of entries) {
       const id = e[1];
+      if (this.isAhead(id)) continue;
       seen.add(id);
-      let o = this.objects.get(id);
-      if (!o) {
-        o = e[0] === 'g' ? this.scene.add.graphics() : this.scene.add.image(0, 0, '__DEFAULT');
-        this.objects.set(id, o);
-      }
+      const o = this.objects.get(id) ?? this.create(id, e[0]);
       if (e[0] === 'g') this.applyGraphics(o, e);
       else this.applyImage(o, e);
       this.entries.set(id, e);
       this.scene.children.bringToTop(o); // keep the host's order among equal depths
     }
     for (const [id, o] of this.objects) {
-      if (seen.has(id)) continue;
+      if (seen.has(id) || this.isAhead(id)) continue;
       o.destroy();
       this.objects.delete(id);
       this.entries.delete(id);
@@ -175,22 +188,56 @@ export class MirrorReceiver {
     o.setAlpha(alpha).setDepth(depth).setBlendMode(blend);
   }
 
-  // Shows the objects `ids` as `entries` (a newer snapshot's than the one applied) has them, but placed
-  // relative to (x, y) as they were to (fromX, fromY) there: our own player, drawn from the newest
-  // snapshot at the predicted spot, while everything else plays back from an older one.
-  showAhead(entries, ids, fromX, fromY, x, y) {
+  // As each snapshot arrives: the objects `ids` (our player and what moves with it) are drawn ahead
+  // from now on. A graphics' new draw commands are kept here, since they're only sent when they change
+  // and showAhead only looks at the newest snapshot.
+  noteAhead(entries, ids) {
     for (const id of ids) {
-      const o = this.objects.get(id);
+      this.ahead.add(id);
+      this.entries.delete(id);
       const e = entries.find((entry) => entry[1] === id);
-      if (!o || !e || e[0] !== 'i') continue;
-      this.applyImage(o, e);
-      o.setPosition(x + e[BLENDED.i.x] - fromX, y + e[BLENDED.i.y] - fromY);
+      if (e?.[0] === 'g' && e[11]) this.aheadCommands.set(id, unpackCommands(e[11]));
     }
+  }
+
+  // Shows the objects `ids` as `entries` (the newest snapshot's) has them, but placed relative to (x, y)
+  // as they were to (fromX, fromY) there: our own player and its effects, drawn from the newest snapshot
+  // at the predicted spot while everything else plays back from an older one. Ahead objects no longer
+  // in `ids` are gone.
+  showAhead(entries, ids, fromX, fromY, x, y, now) {
+    const showing = new Set(ids);
+    for (const id of ids) {
+      const e = entries.find((entry) => entry[1] === id);
+      if (!e) continue;
+      const o = this.objects.get(id) ?? this.create(id, e[0]);
+      if (e[0] === 'g') {
+        this.applyGraphics(o, e.slice(0, 11));
+        const commands = this.aheadCommands.get(id);
+        if (commands) o.commandBuffer = commands;
+        this.aheadCommands.delete(id);
+      } else {
+        this.applyImage(o, e);
+      }
+      const f = BLENDED[e[0]];
+      o.setPosition(x + e[f.x] - fromX, y + e[f.y] - fromY);
+    }
+    for (const id of this.ahead) {
+      if (showing.has(id)) continue;
+      this.objects.get(id)?.destroy();
+      this.objects.delete(id);
+      this.ahead.delete(id);
+      this.aheadCommands.delete(id);
+      this.retired.set(id, now);
+    }
+    for (const [id, at] of this.retired) if (now - at > RETIRED_MS) this.retired.delete(id);
   }
 
   clear() {
     for (const o of this.objects.values()) o.destroy();
     this.objects.clear();
     this.entries.clear();
+    this.ahead.clear();
+    this.retired.clear();
+    this.aheadCommands.clear();
   }
 }

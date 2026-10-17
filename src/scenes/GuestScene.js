@@ -24,9 +24,10 @@ import { Prediction } from '../net/prediction.js';
 // If snapshots stop coming, the picture holds on the last one rather than guessing ahead.
 //
 // The exception is our own player, which would then answer the keys a round trip plus that delay
-// late: it's drawn where we predict it (src/net/prediction.js), and the camera follows that. Its
-// look (an attack, the weapon's swing) and its own effects (its sounds, its screen shake) skip the
-// delay: they come from the newest snapshot and play as they arrive.
+// late: it's drawn where we predict it (src/net/prediction.js), with its class's movement ability
+// predicted too, and the camera follows that. Its look (an attack, the weapon's swing), the effects
+// that move with it (slashes, rings, afterimages) and its sounds and screen shake skip the delay: they
+// come from the newest snapshot and play as they arrive.
 const PLAYBACK_DELAY_MS = 90;  // ~3 snapshots: under ~30 ms of network jitter it rarely runs dry
 const CLOCK_SETTLE = 0.02;     // how fast the estimate of the host's clock follows slower arrivals
 const ME = 1;                  // our player's slot
@@ -70,7 +71,7 @@ export class GuestScene extends Phaser.Scene {
     this.players = null;  // [x, y, alive] per player, between `shown` and the next snapshot
     this.clockOffset = null; // the host's clock minus ours (see syncClock)
     this.playbackTime = -Infinity; // the host time being shown
-    this.prediction = new Prediction();
+    this.prediction = null; // once we know our class, from the first snapshot
     this.run = null;
     this.hud = null;
     this.overShown = false;
@@ -102,9 +103,12 @@ export class GuestScene extends Phaser.Scene {
       this.hud = new Hud(this, TUNING.player.maxHp, snap.classes.map((id) => CLASSES[id]));
       this.effects.targets.hud = this.hud;
       this.status.setVisible(false);
+      this.prediction = new Prediction(snap.classes[ME]);
     }
     this.syncClock(snap.time);
     this.snaps.push(snap);
+    this.mirror.noteAhead(snap.objects, snap.attached[ME]);
+    this.prediction.hearHost(snap.ability, snap.inputAt);
     this.checkPrediction(snap.players[ME], snap.inputAt);
   }
 
@@ -184,13 +188,13 @@ export class GuestScene extends Phaser.Scene {
     const c = this.controls;
     const p = this.prediction;
     c.update(p.active ? p.pos : { x: this.players[ME][0], y: this.players[ME][1] });
-    if (p.active) {
-      p.step(c.move, dt, now);
-      // Our player, its weapon and shadow: as the newest snapshot has them, where predicted.
-      const newest = this.snaps.at(-1) ?? this.shown;
-      const [x, y] = newest.players[ME];
-      this.mirror.showAhead(newest.objects, newest.attached[ME], x, y, p.pos.x, p.pos.y);
-    }
+    const newest = this.snaps.at(-1) ?? this.shown;
+    if (p.active) p.step(c, dt, now, newest.hud.players[ME].resource);
+    // Our player and what moves with it: as the newest snapshot has them, where predicted (where the
+    // host has it once it's dead).
+    const [x, y] = newest.players[ME];
+    const at = p.active ? p.pos : { x, y };
+    this.mirror.showAhead(newest.objects, newest.attached[ME], x, y, at.x, at.y, now);
     this.updateCamera(dt);
     // Every frame, as on the host, for the HUD's own animations (a full bar's flash, the boss bar
     // draining); the numbers are the shown snapshot's. Muting is per machine.

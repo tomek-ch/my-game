@@ -16,6 +16,7 @@ import { MirrorSender } from '../net/mirror.js';
 import { EventRecorder } from '../net/events.js';
 import { CameraFocus, leanCamera, watchedPlayers } from '../camera.js';
 import { localPlayer } from '../localPlayer.js';
+import { PREDICTED_ABILITIES } from '../net/abilities.js';
 
 const MAX_PLAYERS = 2;
 const LEASH_MARGIN = 40; // local co-op players can't walk further apart than the screen, minus this
@@ -170,8 +171,11 @@ export class GameScene extends Phaser.Scene {
         classes: this.classes,
         players: this.players.map((p) => [Math.round(p.x), Math.round(p.y), p.alive]),
         objects: this.mirror.capture(),
-        // What moves with each player, for the guest to draw its own where it predicts it to be.
-        attached: this.players.map((p) => [p, p.weapon, p.shadow.image].map((o) => this.mirror.idOf(o))),
+        // What moves with each player (its effects are marked by Fx), for the guest to draw its own
+        // where it predicts it to be.
+        attached: this.players.map((p) => [p, p.weapon, p.shadow.image, ...this.children.list.filter((o) => o.attachedTo === p)]
+          .map((o) => this.mirror.idOf(o))),
+        ability: this.abilityState(this.players[1], now),
         // The latest input from the guest this frame had, by the guest's clock: what it has caught up to.
         inputAt: this.players[1].controls.inputAt,
         hud: this.hudData(this.isOver ? this.overAt : now),
@@ -179,6 +183,15 @@ export class GameScene extends Phaser.Scene {
       });
     }
     if (events.length) this.link.send({ t: 'fx', run: this.runId, time: Math.round(now), events });
+  }
+
+  // Online: whether the guest's predicted ability (see src/net/abilities.js) is ready on the host, in ms
+  // from now (null for not until something else happens, like a strike ending).
+  abilityState(player, now) {
+    const spec = PREDICTED_ABILITIES[this.classes[this.players.indexOf(player)]];
+    if (!spec) return null;
+    const ms = (t) => (t === Infinity ? null : Math.max(0, Math.round(t - now)));
+    return { readyIn: ms(spec.readyAt(player)), stunIn: ms(player.stunUntil), busy: spec.busy(player) };
   }
 
   livingPlayers() {

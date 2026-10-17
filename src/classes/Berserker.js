@@ -49,6 +49,7 @@ export class Berserker extends HeroClass {
     this.cooldownShown = true; // whether the dash-back ring has played since the last miss
     this.head = scene.add.graphics();
     this.lines = scene.add.graphics(); // the speed lines, drawn behind the hero
+    this.head.attachedTo = this.lines.attachedTo = player; // see Fx
     this.headAngle = 0;
     this.headRaging = false;  // whether the last strike was enraged, for its look while it fades
     this.headFadeFrom = -Infinity; // when the last strike ended, for the arrowhead's fade
