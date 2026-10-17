@@ -24,8 +24,10 @@ import { Prediction } from '../net/prediction.js';
 // If snapshots stop coming, the picture holds on the last one rather than guessing ahead.
 //
 // The exception is our own player, which would then answer the keys a round trip plus that delay
-// late: it's drawn where we predict it (src/net/prediction.js), and the camera follows that.
-const PLAYBACK_DELAY_MS = 100; // two snapshots' worth, for the network's unevenness
+// late: it's drawn where we predict it (src/net/prediction.js), and the camera follows that. Its
+// look (an attack, the weapon's swing) and its own effects (its sounds, its screen shake) skip the
+// delay: they come from the newest snapshot and play as they arrive.
+const PLAYBACK_DELAY_MS = 90;  // ~3 snapshots: under ~30 ms of network jitter it rarely runs dry
 const CLOCK_SETTLE = 0.02;     // how fast the estimate of the host's clock follows slower arrivals
 const ME = 1;                  // our player's slot
 
@@ -75,7 +77,7 @@ export class GuestScene extends Phaser.Scene {
 
     const onSnap = (snap) => this.receiveSnapshot(snap);
     // Effects from another run (just before a restart) are dropped.
-    const onFx = (msg) => msg.run === this.run && this.fxQueue.push(msg);
+    const onFx = (msg) => msg.run === this.run && this.receiveEffects(msg);
     const onClose = () => this.status.setText('Host disconnected - Esc for the title'.toUpperCase()).setTint(0xff6b6b).setVisible(true);
     this.link.on('snap', onSnap).on('fx', onFx).on('close', onClose);
     this.events.once('shutdown', () => this.link.off('snap', onSnap).off('fx', onFx).off('close', onClose));
@@ -113,6 +115,14 @@ export class GuestScene extends Phaser.Scene {
     if (!alive) p.stop();
     else if (!p.active) p.start(x, y);
     else if (inputAt !== null) p.reconcile(x, y, inputAt);
+  }
+
+  // Our player's effects play now; the rest wait their turn with the picture.
+  receiveEffects(msg) {
+    const isMine = (event) => Array.isArray(event[2]) && event[2].some((arg) => arg?.slot === ME);
+    const mine = msg.events.filter(isMine);
+    if (mine.length) this.effects.play(mine, this.time.now);
+    if (mine.length < msg.events.length) this.fxQueue.push({ ...msg, events: msg.events.filter((e) => !isMine(e)) });
   }
 
   // How far the host's clock is ahead of ours, from a snapshot's send time. The quickest arrival sets
@@ -176,9 +186,10 @@ export class GuestScene extends Phaser.Scene {
     c.update(p.active ? p.pos : { x: this.players[ME][0], y: this.players[ME][1] });
     if (p.active) {
       p.step(c.move, dt, now);
-      // Our player, its weapon and shadow, drawn where predicted rather than where the host had them.
-      const [x, y] = this.players[ME];
-      this.mirror.offset(this.shown.attached[ME], p.pos.x - x, p.pos.y - y);
+      // Our player, its weapon and shadow: as the newest snapshot has them, where predicted.
+      const newest = this.snaps.at(-1) ?? this.shown;
+      const [x, y] = newest.players[ME];
+      this.mirror.showAhead(newest.objects, newest.attached[ME], x, y, p.pos.x, p.pos.y);
     }
     this.updateCamera(dt);
     // Every frame, as on the host, for the HUD's own animations (a full bar's flash, the boss bar

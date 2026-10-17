@@ -21,7 +21,7 @@ const MAX_PLAYERS = 2;
 const LEASH_MARGIN = 40; // local co-op players can't walk further apart than the screen, minus this
 // ?boss=<seconds> makes the warden arrive then instead of at its usual time, for testing.
 const BOSS_AT = Number(new URLSearchParams(location.search).get('boss') ?? NaN);
-const SNAPSHOT_INTERVAL_MS = 50; // how often an online host sends the guest what's on screen
+const SNAPSHOT_INTERVAL_MS = 33; // how often an online host sends the guest what's on screen (~30/s)
 // The one-off effects an online guest is told about (see src/net/events.js). The rest of Fx works on
 // sprites and graphics, which reach the guest with the screen.
 const GUEST_FX = ['hitSparks', 'bloodBurst', 'dashDust', 'ember', 'projectileTrail', 'shake', 'hurtFlash'];
