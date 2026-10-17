@@ -44,6 +44,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   create() {
+    // The scene clock only advances in this scene's update(), so on a first start it still holds
+    // the time the game booted; the run's start (timer, spawn ramp) would count from the title screen.
+    this.time.now = this.game.loop.time;
     const { width: W, height: H } = TUNING.world;
 
     this.physics.world.setBounds(0, 0, W, H);
