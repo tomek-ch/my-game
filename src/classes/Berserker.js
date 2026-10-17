@@ -3,7 +3,7 @@ import { TUNING } from '../tuning.js';
 import { sfx } from '../audio/sfx.js';
 import { HeroClass } from './HeroClass.js';
 import { isFrozen } from '../entities/hitstop.js';
-import { pixelSpearhead } from '../pixelShapes.js';
+import { pixelSpearhead, pixelSpike } from '../pixelShapes.js';
 
 export const MOMENTUM_TINT = 0xff8a3d;
 export const RAGE_TINT = 0xff3b3b;
@@ -193,26 +193,48 @@ export class Berserker extends HeroClass {
     this.cooldownShown = chained;
   }
 
-  // A spearhead out in front during a strike, fading once it ends: brightest along its leading edge
-  // and toward the tip, thinning out into the spikes trailing behind.
+  // A spearhead out in front during a strike, with speed lines streaming back from it; it all fades
+  // once the strike ends. Brightest along the leading edge and toward the tip.
   syncVisuals(now) {
-    const H = this.cfg.strike.head;
+    const S = this.cfg.strike;
+    const H = S.head;
     const g = this.head.clear();
     if (this.strike) this.headAngle = this.strike.angle;
     const alpha = this.strike ? 1 : 1 - (now - this.headFadeFrom) / H.fadeMs;
     if (alpha <= 0) return;
     const p = this.player;
+    const angle = this.headAngle;
     const color = this.raging ? RAGE_TINT : MOMENTUM_TINT;
+    g.setDepth(p.depth + 0.0002);
+
+    const L = S.speedLines;
+    const ux = Math.cos(angle);
+    const uy = Math.sin(angle);
+    const flicker = Math.floor(now / L.flickerMs);
+    for (let i = 0; i < L.count; i++) {
+      const side = (i / (L.count - 1)) * 2 - 1; // -1 to 1 across the spread
+      const off = side * L.spread;
+      // Each line starts just behind the head's back edge (or the shoulder points, past them).
+      const t = Math.min(Math.abs(off) / H.halfWidth, 1);
+      const start = H.back - H.sweep * t * t - 2;
+      const x = p.x + ux * start - uy * off;
+      const y = p.y + uy * start + ux * off;
+      const wake = L.innerLength + (1 - L.innerLength) * Math.abs(side);
+      const len = L.length * wake * (1 - L.jitter * noise(i, flicker));
+      const fill = i % 2 ? color : EDGE_TINT;
+      g.fillStyle(fill, 0.9 * alpha);
+      pixelSpike(g, x, y, angle + Math.PI, len, L.halfWidth, (f) => f < 0.45);
+      g.fillStyle(fill, 0.45 * alpha);
+      pixelSpike(g, x, y, angle + Math.PI, len, L.halfWidth, (f) => f >= 0.45);
+    }
+
     const draw = (fill, a, pick) => {
       g.fillStyle(fill, a * alpha);
-      pixelSpearhead(g, p.x, p.y, this.headAngle, H, pick);
+      pixelSpearhead(g, p.x, p.y, angle, H, pick);
     };
-    g.setDepth(p.depth + 0.0002);
-    draw(color, 0.6, (f, rim) => !rim && f < 0.3);
-    draw(color, 0.8, (f, rim) => !rim && f >= 0.3 && f < 0.55);
-    draw(color, 0.95, (f, rim) => !rim && f >= 0.55);
-    draw(EDGE_TINT, 1, (f, rim) => rim && f >= 0.15);
-    draw(EDGE_TINT, 0.75, (f, rim) => rim && f < 0.15);
+    draw(color, 0.8, (f, rim) => !rim && f < 0.5);
+    draw(color, 0.95, (f, rim) => !rim && f >= 0.5);
+    draw(EDGE_TINT, 1, (f, rim) => rim);
   }
 
   // Fire with a full bar: hit everything around you. Waits for a strike in progress to finish.
@@ -284,4 +306,10 @@ export class Berserker extends HeroClass {
     if (this.strike || now - this.lastGainAt < M.graceMs) return;
     this.meter = Math.max(0, this.meter - M.drainPerSec * dt);
   }
+}
+
+// A repeatable 0..1 value for speed line `i` at flicker step `step`.
+function noise(i, step) {
+  const x = Math.sin(i * 127.1 + step * 311.7) * 43758.5453;
+  return x - Math.floor(x);
 }

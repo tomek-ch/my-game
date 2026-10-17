@@ -117,8 +117,11 @@ export const TUNING = {
         killHitstopBonusMs: 20,
         ghostIntervalMs: 14,
         shake: { duration: 70, intensity: 0.004 },
-        // The spearhead drawn ahead of you during a strike (see pixelSpearhead), px. Fades out after.
-        head: { back: 14, length: 56, halfWidth: 26, tail: 46, tailWidth: 32, notch: 4, rim: 4, fadeMs: 140 },
+        // Drawn during a strike and fading out after it: a spearhead ahead of you (see pixelSpearhead)...
+        head: { back: 14, length: 56, halfWidth: 26, sweep: 10, rim: 4, fadeMs: 140 },
+        // ...and speed lines trailing behind it, spread `spread` px each side. The outer lines run
+        // longest; every flickerMs each one's length is rerolled by up to `jitter` of it.
+        speedLines: { count: 7, spread: 36, length: 80, innerLength: 0.5, halfWidth: 3.5, jitter: 0.35, flickerMs: 45 },
       },
 
       // Momentum, 0 to max. Drains after a moment without a hit. Hitstop and strikes pause the drain.
