@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { BootScene } from './scenes/BootScene.js';
 import { StartScene } from './scenes/StartScene.js';
 import { GameScene } from './scenes/GameScene.js';
+import { GuestScene } from './scenes/GuestScene.js';
 
 // Open with ?debug to see physics bodies.
 const debug = new URLSearchParams(location.search).has('debug');
@@ -21,5 +22,5 @@ new Phaser.Game({
   fps: { smoothStep: false },
   physics: { default: 'arcade', arcade: { debug } },
   input: { gamepad: true },
-  scene: [BootScene, StartScene, GameScene],
+  scene: [BootScene, StartScene, GameScene, GuestScene],
 });

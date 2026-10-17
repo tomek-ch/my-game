@@ -8,7 +8,7 @@ export const PAD = { dash: [0, 7], back: 1, view: 2, coop: 3, melee: 5, shoot: 4
 const TRIGGER_THRESHOLD = 0.5; // Phaser counts a press only at 1.0, a full pull that some triggers never reach
 
 // What one player wants to do this frame. The game only reads this, never a device, so a player can
-// be driven by the mouse and keyboard, a gamepad, or (later) a remote peer.
+// be driven by the mouse and keyboard, a gamepad, or a remote peer.
 // A device is named 'kbm' (keyboard and mouse) or by a gamepad's index.
 export class Controls {
   constructor() {
@@ -106,6 +106,54 @@ export class GamepadControls extends Controls {
   }
 }
 
-export function createControls(scene, device) {
+// The buffered presses, by their Controls field; these names go over the wire.
+export const PRESSES = ['attackQueuedAt', 'shootQueuedAt', 'dashQueuedAt'];
+
+// A player on another machine: the guest reads its own device and sends what it reads over `link`
+// (see GuestScene). Presses are stamped with this scene's clock as they arrive. A mouse's aim comes
+// as the world point aimed at, so the angle is worked out here from where the player is now.
+export class RemoteControls extends Controls {
+  constructor(scene, link) {
+    super();
+    const onInput = (msg) => {
+      this.move.set(msg.move[0], msg.move[1]);
+      this.aimAngle = msg.aimAngle;
+      this.aimPoint = msg.aimPoint && { x: msg.aimPoint[0], y: msg.aimPoint[1] };
+      this.aimReach = msg.aimReach;
+      this.attackHeld = msg.attackHeld;
+    };
+    const onPress = (msg) => {
+      if (PRESSES.includes(msg.button)) this[msg.button] = scene.time.now;
+    };
+    const onClose = () => {
+      this.move.set(0, 0);
+      this.attackHeld = false;
+    };
+    link.on('input', onInput).on('press', onPress).on('close', onClose);
+    scene.events.once('shutdown', () => link.off('input', onInput).off('press', onPress).off('close', onClose));
+  }
+
+  update(player) {
+    if (this.aimPoint) this.aimAngle = Math.atan2(this.aimPoint.y - player.y, this.aimPoint.x - player.x);
+  }
+}
+
+// The guest's side of RemoteControls: what `controls` read this frame, as an 'input' message.
+export function inputMessage(controls) {
+  const round = (v) => Math.round(v * 100) / 100;
+  const { move, aimAngle, aimPoint, aimReach } = controls;
+  return {
+    t: 'input',
+    move: [round(move.x), round(move.y)],
+    aimAngle: aimAngle === null ? null : round(aimAngle),
+    aimPoint: aimPoint ? [Math.round(aimPoint.x), Math.round(aimPoint.y)] : null,
+    aimReach: aimReach === null ? null : round(aimReach),
+    attackHeld: controls.attackHeld,
+  };
+}
+
+// device: 'kbm', a gamepad index, or 'remote' for the guest in an online game (needs `link`).
+export function createControls(scene, device, link) {
+  if (device === 'remote') return new RemoteControls(scene, link);
   return device === 'kbm' ? new MouseKeyboardControls(scene) : new GamepadControls(scene, device);
 }

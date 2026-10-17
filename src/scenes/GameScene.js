@@ -17,6 +17,7 @@ const MAX_PLAYERS = 2;
 const LEASH_MARGIN = 40; // co-op players can't walk further apart than the screen, minus this
 // ?boss=<seconds> makes the warden arrive then instead of at its usual time, for testing.
 const BOSS_AT = Number(new URLSearchParams(location.search).get('boss') ?? NaN);
+const VIEW_INTERVAL_MS = 50; // how often an online host tells the guest what to show
 
 export class GameScene extends Phaser.Scene {
   constructor() {
@@ -25,7 +26,9 @@ export class GameScene extends Phaser.Scene {
 
   // data.devices: one input device per local player, 'kbm' or a gamepad index (see controls.js).
   // data.classes: each player's class id (see src/classes/), knight if missing.
+  // data.link: in an online game, the Link to the guest, whose player's device is 'remote' (see src/net/).
   init(data) {
+    this.link = data?.link ?? null;
     this.devices = (data?.devices ?? ['kbm']).slice(0, MAX_PLAYERS);
     this.classes = this.devices.map((_, i) => (CLASSES[data?.classes?.[i]] ? data.classes[i] : 'knight'));
     this.playerCount = this.devices.length;
@@ -40,7 +43,7 @@ export class GameScene extends Phaser.Scene {
     const coop = this.playerCount > 1;
     this.players = [];
     for (let i = 0; i < this.playerCount; i++) {
-      const controls = createControls(this, this.devices[i]);
+      const controls = createControls(this, this.devices[i], this.link);
       const x = W / 2 + (i - (this.playerCount - 1) / 2) * 60;
       const Kit = CLASSES[this.classes[i]];
       const player = new Player(this, x, H / 2, { hero: Kit.heroes[i % Kit.heroes.length], weapon: Kit.weapon, controls });
@@ -92,6 +95,7 @@ export class GameScene extends Phaser.Scene {
     this.events.once('shutdown', () => this.events.off('postupdate', this.syncVisuals, this));
 
     this.hud = new Hud(this, TUNING.player.maxHp, this.classes.map((id) => CLASSES[id]));
+    this.nextViewAt = 0;
   }
 
   update(_time, delta) {
@@ -119,6 +123,21 @@ export class GameScene extends Phaser.Scene {
 
     this.updateCameraLookahead();
     this.updateHud(now);
+    this.sendView(now);
+  }
+
+  // Online, for now the guest only sees where the camera is and where the players are, enough to aim
+  // with the mouse; the game itself is watched on the host's screen.
+  sendView(now) {
+    if (!this.link || now < this.nextViewAt) return;
+    this.nextViewAt = now + VIEW_INTERVAL_MS;
+    const cam = this.cameras.main;
+    this.link.send({
+      t: 'view',
+      cam: [Math.round(cam.scrollX), Math.round(cam.scrollY)],
+      players: this.players.map((p) => [Math.round(p.x), Math.round(p.y), p.alive]),
+      over: this.isOver,
+    });
   }
 
   livingPlayers() {
@@ -455,9 +474,11 @@ export class GameScene extends Phaser.Scene {
     this.physics.world.pause();
 
     this.hud.showGameOver({ kills: this.kills, secs: Math.floor((this.overAt - this.startedAt) / 1000) });
+    this.nextViewAt = 0; // update() stops here, so tell the guest now
+    this.sendView(this.overAt);
   }
 
   tryRestart() {
-    if (this.time.now - this.overAt > 500) this.scene.restart({ devices: this.devices, classes: this.classes });
+    if (this.time.now - this.overAt > 500) this.scene.restart({ devices: this.devices, classes: this.classes, link: this.link });
   }
 }

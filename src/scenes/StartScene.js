@@ -5,6 +5,7 @@ import { pixelText } from '../ui/pixelFont.js';
 import { BLOOD } from '../textures.js';
 import { PAD } from '../input/controls.js';
 import { CLASSES, CLASS_IDS } from '../classes/index.js';
+import { hostRoom, joinRoom } from '../net/link.js';
 
 const UI = 3; // screen pixels per font pixel for the control rows
 const KEY_COLOR = 0xf2c14e;
@@ -24,6 +25,9 @@ const NEXT_KEYS = ['ArrowRight', 'd', 'D'];
 const PAD_PREV = [14, 4]; // d-pad left, LB
 const PAD_NEXT = [15, 5]; // d-pad right, RB
 
+// ?join=<code> joins that online room straight away, once (not again on coming back to the title).
+let joinFromUrl = new URLSearchParams(location.search).get('join');
+
 const deviceName = (device) => (device === 'kbm' ? 'Keyboard + mouse' : `Gamepad ${device + 1}`);
 
 // The title screen: a class picker, and that class's controls over a dimmed dungeon, for a gamepad if
@@ -33,6 +37,8 @@ const deviceName = (device) => (device === 'kbm' ? 'Keyboard + mouse' : `Gamepad
 // that gamepad. 2 or Y opens co-op: that device is player 1 with the class picked so far, the picker
 // moves on to player 2's class, and the run starts when a second device joins (another gamepad, or the
 // keyboard and mouse). Open the game with ?class=berserker to start on that class.
+// Online co-op (a first spike, see src/net/): H hosts a room on the keyboard and mouse and shows its
+// code; J asks for a code and joins that room as player 2 with the class picked here.
 export class StartScene extends Phaser.Scene {
   constructor() {
     super('start');
@@ -91,10 +97,12 @@ export class StartScene extends Phaser.Scene {
     this.titleHints = [
       blink(pixelText(this, cx, height - 110, 'Click, press a key or A on a gamepad to start', 2).setOrigin(0.5)),
       pixelText(this, cx, height - 80, 'Co-op: press 2, or Y on a gamepad', 2).setOrigin(0.5).setAlpha(0.6),
+      pixelText(this, cx, height - 55, 'Online: H to host, J to join', 2).setOrigin(0.5).setAlpha(0.6),
     ];
     this.joinP1 = pixelText(this, cx, height - 120, '', 2).setOrigin(0.5).setTint(KEY_COLOR);
     this.joinP2 = blink(pixelText(this, cx, height - 95, '', 2).setOrigin(0.5).setTint(PAD_COLOR));
     this.joinBack = pixelText(this, cx, height - 60, 'Esc or B to go back', 2).setOrigin(0.5).setAlpha(0.6);
+    this.online = null; // set while hosting or joining a room
     this.showTitle();
 
     this.started = false; // a click and a key press can land in the same frame
@@ -112,7 +120,10 @@ export class StartScene extends Phaser.Scene {
       else if (e.key === 'Tab') {
         e.preventDefault(); // keep focus on the game
         this.pickView(this.view === 'kbm' ? 'pad' : 'kbm');
-      } else if (PREV_KEYS.includes(e.key)) this.cycleClass('kbm', -1);
+      } else if (this.online) return;
+      else if (e.key === 'h' || e.key === 'H') this.hostOnline();
+      else if (e.key === 'j' || e.key === 'J') this.joinOnline(window.prompt('Room code'));
+      else if (PREV_KEYS.includes(e.key)) this.cycleClass('kbm', -1);
       else if (NEXT_KEYS.includes(e.key)) this.cycleClass('kbm', 1);
       else this.onPress('kbm', e.key === '2');
     });
@@ -123,6 +134,9 @@ export class StartScene extends Phaser.Scene {
       else if (PAD_NEXT.includes(button.index)) this.cycleClass(pad.index, 1);
       else this.onPress(pad.index, button.index === PAD.coop);
     });
+
+    if (joinFromUrl) this.joinOnline(joinFromUrl);
+    joinFromUrl = null;
   }
 
   get kit() {
@@ -132,7 +146,7 @@ export class StartScene extends Phaser.Scene {
   // `device` asked for the previous (-1) or next (1) class. While waiting for player 2, player 1's
   // class is locked in and only the other devices pick.
   cycleClass(device, step) {
-    if (this.p1 !== null && device === this.p1) return;
+    if (this.online || (this.p1 !== null && device === this.p1)) return;
     const n = CLASS_IDS.length;
     this.picks[this.slot] = (this.picks[this.slot] + step + n) % n;
     this.showClass();
@@ -164,6 +178,8 @@ export class StartScene extends Phaser.Scene {
   }
 
   showTitle() {
+    this.online?.cancel?.();
+    this.online = null;
     this.p1 = null;
     this.slot = 0;
     this.showClass();
@@ -183,8 +199,56 @@ export class StartScene extends Phaser.Scene {
     this.joinBack.setVisible(true);
   }
 
+  // Online status in place of the hints: two lines and the way back.
+  showOnline(line1, line2 = '') {
+    for (const t of this.titleHints) t.setVisible(false);
+    this.joinP1.setText(line1.toUpperCase()).setVisible(true);
+    this.joinP2.setText(line2.toUpperCase()).setVisible(true);
+    this.joinBack.setVisible(true);
+  }
+
+  // Opens a room and waits for a guest; the run starts when one says hello with its class.
+  async hostOnline() {
+    const session = (this.online = { cancel: null });
+    this.showOnline('Opening a room...');
+    try {
+      const room = await hostRoom((link) => {
+        if (this.online !== session) return link.close();
+        link.once('hello', (msg) => this.startOnline(link, msg.class));
+      });
+      if (this.online !== session) return room.cancel();
+      session.cancel = room.cancel;
+      this.showOnline(`Room code: ${room.code}`, 'Waiting for P2 to press J and enter it');
+    } catch (err) {
+      if (this.online === session) this.showOnline('Could not open a room', err.message);
+    }
+  }
+
+  startOnline(link, guestClass) {
+    const classes = [CLASS_IDS[this.picks[0]], CLASSES[guestClass] ? guestClass : 'knight'];
+    if (!this.started) this.scene.start('game', { devices: ['kbm', 'remote'], classes, link });
+    this.started = true;
+  }
+
+  async joinOnline(code) {
+    code = code?.trim();
+    if (!code) return;
+    const session = (this.online = {});
+    this.showOnline(`Joining ${code}...`);
+    try {
+      const link = await joinRoom(code);
+      if (this.online !== session || this.started) return link.close();
+      link.send({ t: 'hello', class: CLASS_IDS[this.picks[0]] });
+      this.started = true;
+      this.scene.start('guest', { link });
+    } catch (err) {
+      if (this.online === session) this.showOnline('Could not join', err.message);
+    }
+  }
+
   // A press on `device`. `coop` asks for co-op instead of a solo run.
   onPress(device, coop = false) {
+    if (this.online) return;
     if (this.p1 === null) {
       if (coop) this.showJoin(device);
       else this.start([device]);
