@@ -14,7 +14,8 @@ const STRIKE_SWING_DEG = 110; // the axe starts this far to one side of the stri
 // A strike that hits can be chained straight into the next; a miss, or bouncing off a brute, puts it
 // on cooldown. Hits fill the
 // momentum bar, which drains when you stop hitting. Past half, strikes hit harder and go through
-// brutes; a full bar buys a whirlwind that hits everything around you.
+// brutes; a full bar buys a whirlwind that hits everything around you and spends only half the bar,
+// so you come out of it still raging.
 export class Berserker extends HeroClass {
   static id = 'berserker';
   static title = 'Berserker';
@@ -32,6 +33,7 @@ export class Berserker extends HeroClass {
     super(scene, player);
     this.meter = 0;
     this.lastGainAt = -Infinity;
+    this.holdUntil = 0;       // no draining before this, see TUNING.classes.berserker.spin.holdMs
     this.strike = null;       // the strike in progress, see tryStrike()
     this.side = 1;            // strikes alternate which way the axe swings
     this.cooldownShown = true; // whether the dash-back ring has played since the last miss
@@ -256,7 +258,9 @@ export class Berserker extends HeroClass {
       scene.hud.shakeResource(this.playerIndex);
       return;
     }
-    this.meter = 0;
+    // Spend the top half: what's left keeps you raging, held there for a moment.
+    this.meter -= W.cost;
+    this.holdUntil = now + W.holdMs;
 
     const inSpin = (x, y, radius) => Phaser.Math.Distance.Between(p.x, p.y, x, y) <= W.radius + radius;
     scene.cutBullets(inSpin);
@@ -306,10 +310,10 @@ export class Berserker extends HeroClass {
     }
   }
 
-  // The bar holds during a strike and for a moment after the last gain, then drains.
+  // The bar holds during a strike, for a moment after the last gain, and after a whirlwind; then drains.
   drain(now, dt) {
     const M = this.cfg.meter;
-    if (this.strike || now - this.lastGainAt < M.graceMs) return;
+    if (this.strike || now < this.holdUntil || now - this.lastGainAt < M.graceMs) return;
     this.meter = Math.max(0, this.meter - M.drainPerSec * dt);
   }
 }

@@ -135,9 +135,12 @@ export const TUNING = {
         rageAt: 50,           // at or above: harder strikes that go through brutes
       },
 
-      // A full bar: spin and hit everything around you. Spends the whole bar, kills refund some.
+      // Needs a full bar: spin and hit everything around you. Spends only `cost` of it (the half above
+      // rageAt), so you come out of it still raging; kills refund some.
       spin: {
         bufferMs: 160,
+        cost: 50,
+        holdMs: 1500,         // the bar doesn't drain this long after a whirlwind
         radius: 115,          // from your center to the enemy's edge
         damage: 4,
         knockback: 720,
