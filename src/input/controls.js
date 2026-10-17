@@ -15,10 +15,12 @@ export class Controls {
     this.move = new Phaser.Math.Vector2(); // normalized, or zero
     this.aimAngle = null;                  // radians, or null to keep the current aim
     this.aimPoint = null;                  // world point aimed at, if the device has one (a mouse)
+    this.aimReach = null;                  // 0..1 how far a stick is tilted past the deadzone, or null
     // When each button was last pressed, so presses can be buffered for a moment.
     this.attackQueuedAt = -Infinity;
     this.shootQueuedAt = -Infinity;
     this.dashQueuedAt = -Infinity;
+    this.attackHeld = false; // whether the attack button is down right now, for auto-fire
   }
 
   // Refresh move/aim/held state from the device. `player` is the one these controls drive.
@@ -57,6 +59,7 @@ export class MouseKeyboardControls extends Controls {
       (held(k.S, 'down') ? 1 : 0) - (held(k.W, 'up') ? 1 : 0),
     ).normalize();
 
+    this.attackHeld = this.pointer.leftButtonDown();
     const aim = this.scene.cameras.main.getWorldPoint(this.pointer.x, this.pointer.y);
     this.aimPoint = aim;
     this.aimAngle = Math.atan2(aim.y - player.y, aim.x - player.x);
@@ -88,13 +91,17 @@ export class GamepadControls extends Controls {
     const pad = this.pad;
     // Pads are created per scene with the default threshold; this is the first chance to set it.
     for (const i of PAD.triggers) if (pad?.buttons[i]) pad.buttons[i].threshold = TRIGGER_THRESHOLD;
+    this.attackHeld = !!pad?.buttons[PAD.melee]?.pressed;
     const stick = pad?.leftStick;
     if (stick && stick.length() > STICK_DEADZONE) this.move.copy(stick).limit(1);
     else this.move.set(0, 0);
 
     const aim = pad?.rightStick;
-    if (aim && aim.length() > AIM_DEADZONE) this.aimAngle = aim.angle();
-    else if (this.move.lengthSq() > 0) this.aimAngle = this.move.angle();
+    this.aimReach = null;
+    if (aim && aim.length() > AIM_DEADZONE) {
+      this.aimAngle = aim.angle();
+      this.aimReach = Math.min((aim.length() - AIM_DEADZONE) / (1 - AIM_DEADZONE), 1);
+    } else if (this.move.lengthSq() > 0) this.aimAngle = this.move.angle();
     else this.aimAngle = null;
   }
 }

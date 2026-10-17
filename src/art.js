@@ -27,7 +27,7 @@ export function registerArt(scene) {
   }
 
   // Every playable class's heroes (see src/classes/).
-  for (const hero of ['knight_m', 'knight_f', 'lizard_m', 'lizard_f']) {
+  for (const hero of ['knight_m', 'knight_f', 'lizard_m', 'lizard_f', 'wizzard_m', 'wizzard_f']) {
     loopAnim(scene, `${hero}_idle`, `${hero}_idle_anim_f`, 4, 6);
     loopAnim(scene, `${hero}_run`, `${hero}_run_anim_f`, 4, 12);
   }

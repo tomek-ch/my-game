@@ -214,6 +214,52 @@ class Sfx {
     ]);
   }
 
+  // The mage's throw: a soft whoosh that climbs as the fireball leaves the hand.
+  fireballThrow() {
+    return this.play('fireballThrow', null, null, 0, (o) => [
+      this.noise(o, { freq: 500, to: 1800, q: 0.9, dur: 0.18, vol: 0.3 }),
+      this.tone(o, { type: 'triangle', freq: 220, to: 440, dur: 0.12, vol: 0.08 }),
+    ]);
+  }
+
+  // A fireball landing: a soft whoomph as it catches, a roar that dies down, and crackles over it.
+  fireballBoom(x, y) {
+    return this.play('fireballBoom', x, y, 30, (o) => [
+      this.noise(o, { freq: 300, to: 900, q: 0.7, dur: 0.12, vol: 0.35, attack: 0.02 }),
+      this.noise(o, { filter: 'lowpass', freq: 1400, to: 350, dur: 0.6, vol: 0.4, attack: 0.04, delay: 0.03 }),
+      this.tone(o, { type: 'triangle', freq: 85, to: 60, dur: 0.25, vol: 0.12, attack: 0.03 }),
+      ...[0.05, 0.11, 0.16, 0.24, 0.31, 0.42].map((delay, i) =>
+        this.noise(o, { filter: 'highpass', freq: 2200 + (i % 3) * 900, dur: 0.025, vol: 0.18 - i * 0.02, delay })),
+    ]);
+  }
+
+  // The mage's zap: a short electric buzz, a little different each time.
+  zap() {
+    const f = 1500 + Math.random() * 500;
+    return this.play('zap', null, null, 40, (o) => [
+      this.tone(o, { type: 'sawtooth', freq: f, to: f * 0.4, dur: 0.06, vol: 0.05 }),
+      this.noise(o, { filter: 'highpass', freq: 5000, dur: 0.04, vol: 0.12 }),
+    ]);
+  }
+
+  // A zap landing: a dry crackle.
+  zapHit(x, y) {
+    return this.play('zapHit', x, y, 50, (o) => [
+      this.noise(o, { freq: 3500, q: 2, dur: 0.03, vol: 0.2 }),
+      this.noise(o, { freq: 2500, q: 2, dur: 0.02, vol: 0.14, delay: 0.035 }),
+      this.tone(o, { type: 'square', freq: 220, to: 110, dur: 0.04, vol: 0.03 }),
+    ]);
+  }
+
+  // A quick pop out and back in.
+  blink() {
+    return this.play('blink', null, null, 0, (o) => [
+      this.tone(o, { freq: 1200, to: 300, dur: 0.06, vol: 0.12 }),
+      this.tone(o, { freq: 400, to: 1600, dur: 0.08, vol: 0.1, delay: 0.05 }),
+      this.noise(o, { freq: 2000, to: 5000, dur: 0.1, vol: 0.15 }),
+    ]);
+  }
+
   // ---- Synth plumbing -----------------------------------------------------------------------
 
   // Builds a voice (gain + pan) for a sound, runs `build` to attach sources, and returns a handle

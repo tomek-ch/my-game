@@ -3,6 +3,7 @@ import { TUNING } from '../tuning.js';
 import { BLOOD } from '../textures.js';
 import { pixelText } from './pixelFont.js';
 import { MOMENTUM_TINT, RAGE_TINT } from '../classes/Berserker.js';
+import { MANA_TINT } from '../classes/Mage.js';
 
 const UI = 3;          // screen pixels per art pixel for HUD text and icons
 const HEART_SCALE = 2; // hearts are drawn a bit smaller
@@ -183,16 +184,15 @@ class Charges {
   }
 }
 
-// The berserker's momentum (TUNING.classes.berserker.meter): a bar as wide as the hearts, with a notch
-// where rage starts. Past it the fill turns red, and a full bar pulses.
+// A bar as wide as the hearts, filled up to value / max, with an optional notch. Subclasses set `max`
+// and `notchAt` (or null) and pick the fill's color.
 const METER_W = 73; // art pixels, the width of five hearts
 const METER_H = 5;
 const METER_SCALE = 2;
 
 class Meter {
-  constructor(hud, left, top, cfg) {
+  constructor(hud, left, top) {
     this.scene = hud.scene;
-    this.cfg = cfg.meter;
     this.left = left;
     this.top = top;
     this.height = METER_H * METER_SCALE;
@@ -202,20 +202,20 @@ class Meter {
   }
 
   update(value, now) {
-    const { max, rageAt } = this.cfg;
+    const { max, notchAt } = this;
     const s = METER_SCALE;
     const x = this.left + this.shakeX;
     const y = this.top;
     const fill = Math.round((METER_W - 2) * Phaser.Math.Clamp(value / max, 0, 1));
-    const notch = 1 + Math.round((METER_W - 2) * rageAt / max);
-    let color = value >= rageAt ? RAGE_TINT : MOMENTUM_TINT;
-    if (value >= max && Math.floor(now / 120) % 2 === 0) color = 0xffe08a;
 
     const g = this.g.clear();
     g.fillStyle(now < this.alarmUntil ? BLOOD[3] : 0x1a1016).fillRect(x, y, METER_W * s, METER_H * s);
     g.fillStyle(CHARGE_EMPTY).fillRect(x + s, y + s, (METER_W - 2) * s, (METER_H - 2) * s);
-    if (fill > 0) g.fillStyle(color).fillRect(x + s, y + s, fill * s, (METER_H - 2) * s);
-    g.fillStyle(0x1a1016).fillRect(x + notch * s, y, s, METER_H * s);
+    if (fill > 0) g.fillStyle(this.color(value, now)).fillRect(x + s, y + s, fill * s, (METER_H - 2) * s);
+    if (notchAt !== null) {
+      const notch = 1 + Math.round((METER_W - 2) * notchAt / max);
+      g.fillStyle(0x1a1016).fillRect(x + notch * s, y, s, METER_H * s);
+    }
   }
 
   shake() {
@@ -226,6 +226,36 @@ class Meter {
   }
 }
 
+// The berserker's momentum (TUNING.classes.berserker.meter), with a notch where rage starts. Past it
+// the fill turns red, and a full bar pulses.
+class Momentum extends Meter {
+  constructor(hud, left, top, cfg) {
+    super(hud, left, top);
+    this.max = cfg.meter.max;
+    this.notchAt = cfg.meter.rageAt;
+  }
+
+  color(value, now) {
+    if (value >= this.max && Math.floor(now / 120) % 2 === 0) return 0xffe08a;
+    return value >= this.notchAt ? RAGE_TINT : MOMENTUM_TINT;
+  }
+}
+
+// The mage's mana (TUNING.classes.mage.mana), with a notch at a fireball's cost. Dimmed while there
+// isn't enough for the cheapest spell.
+class Mana extends Meter {
+  constructor(hud, left, top, cfg) {
+    super(hud, left, top);
+    this.max = cfg.mana.max;
+    this.notchAt = cfg.fireball.cost;
+    this.cheapest = Math.min(cfg.fireball.cost, cfg.blink.cost);
+  }
+
+  color(value) {
+    return value >= this.cheapest ? MANA_TINT : 0x34508f;
+  }
+}
+
 // HUD resource widgets by name, as a class's static `hud` picks them. Each is built with
 // (hud, left, top, classTuning), has a `height`, and update(value, now) and shake() methods.
-const WIDGETS = { charges: Charges, meter: Meter };
+const WIDGETS = { charges: Charges, meter: Momentum, mana: Mana };

@@ -43,6 +43,43 @@ const ORB = [
 ];
 const ORB_PALETTE = { P: 0xb15cff, L: 0xd78bff, W: 0xffffff };
 
+// The mage's spells, and the burning enemies they leave behind.
+export const FIRE_TINT = 0xff7a2e;
+export const ZAP_TINT = 0x7fe9ff;
+const ZAP_GLOW = 0x3f8cff;
+const ZAP_W = 12; // art pixels; the zap points +x
+const ZAP_H = 7;
+const ZAP_FRAMES = 3;
+const FIREBALL = [
+  [
+    '...RRRRR...',
+    '..RFFFFFR..',
+    '.RFFYYYFFR.',
+    'RFFYYWYYFFR',
+    'RFYYWWWYYFR',
+    'RFYWWWWWYFR',
+    'RFYYWWWYYFR',
+    'RFFYYWYYFFR',
+    '.RFFYYYFFR.',
+    '..RFFFFFR..',
+    '...RRRRR...',
+  ],
+  [
+    '...RRRR....',
+    '..RFFFFRR..',
+    '.RFFYYYFFR.',
+    'RFFYYYYYFFR',
+    'RFYYWWWYYFR',
+    'RFYYWWWYYFR',
+    'RFYYWWWYYFR',
+    'RFFYYYYYFFR',
+    '.RFFYYYFFR.',
+    '..RRFFFFR..',
+    '....RRRR...',
+  ],
+];
+const FIREBALL_PALETTE = { R: 0xc4361b, F: FIRE_TINT, Y: 0xffd34d, W: 0xffffff };
+
 export function createTextures(scene) {
   const g = scene.make.graphics({}, false);
 
@@ -56,6 +93,26 @@ export function createTextures(scene) {
     key: 'orb',
     frames: ORB.map((_, i) => ({ key: `orb-${i}` })),
     frameRate: 8,
+    repeat: -1,
+  });
+  FIREBALL.forEach((rows, i) => {
+    drawRows(g, rows, FIREBALL_PALETTE).generateTexture(`fireball-${i}`, rows[0].length, rows.length);
+    g.clear();
+  });
+  for (let i = 0; i < ZAP_FRAMES; i++) {
+    drawZap(g, seededRandom(100 + i)).generateTexture(`zap-${i}`, ZAP_W, ZAP_H);
+    g.clear();
+  }
+  scene.anims.create({
+    key: 'zap',
+    frames: Array.from({ length: ZAP_FRAMES }, (_, i) => ({ key: `zap-${i}` })),
+    frameRate: 30,
+    repeat: -1,
+  });
+  scene.anims.create({
+    key: 'fireball',
+    frames: FIREBALL.map((_, i) => ({ key: `fireball-${i}` })),
+    frameRate: 12,
     repeat: -1,
   });
 
@@ -93,6 +150,32 @@ function drawRows(g, rows, palette) {
       if (palette[ch] !== undefined) g.fillStyle(palette[ch]).fillRect(x, y, 1, 1);
     });
   });
+  return g;
+}
+
+// A short jagged spark: a white core zigzagging along the middle row, with glow above and below it,
+// brighter toward the tip.
+function drawZap(g, rng) {
+  const mid = (ZAP_H - 1) / 2;
+  const knots = [0, 3, 6, 9, ZAP_W - 1].map((x, i, all) => ({
+    x,
+    y: i === all.length - 1 ? mid : Math.round(mid + (rng() - 0.5) * 4),
+  }));
+  const core = [];
+  for (let k = 0; k < knots.length - 1; k++) {
+    const a = knots[k];
+    const b = knots[k + 1];
+    for (let x = a.x; x < b.x || (k === knots.length - 2 && x === b.x); x++) {
+      const y0 = Math.round(a.y + (b.y - a.y) * (x - a.x) / (b.x - a.x));
+      const y1 = Math.round(a.y + (b.y - a.y) * (x + 1 - a.x) / (b.x - a.x));
+      for (let y = Math.min(y0, y1); y <= Math.max(y0, y1); y++) core.push({ x, y });
+    }
+  }
+  for (const { x, y } of core) {
+    g.fillStyle(x < ZAP_W / 2 ? ZAP_GLOW : ZAP_TINT).fillRect(x, y - 1, 1, 3);
+  }
+  g.fillStyle(0xffffff);
+  for (const { x, y } of core) g.fillRect(x, y, 1, 1);
   return g;
 }
 

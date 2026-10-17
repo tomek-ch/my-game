@@ -49,7 +49,9 @@ export const TUNING = {
         speed: 580,
         range: 700,           // bolt fizzles after travelling this far
         damage: 3,
-        pierceBonus: 1,       // extra damage for each enemy the bolt already went through
+        pierce: true,         // goes through enemies, hitting each once...
+        pierceBonus: 1,       // ...with extra damage for each enemy it already went through
+        heavy: true,          // staggers a brute
         knockback: 520,
         stunMs: 400,          // also staggers a brute, like a finisher
         recoil: 220,          // pushes the player backward per shot
@@ -171,6 +173,64 @@ export const TUNING = {
         invulnMs: 300,
         hitstopMs: 110,
         shake: { duration: 200, intensity: 0.012 },
+      },
+    },
+
+    // Zaps that fill the mana bar, and fireballs and blinks that spend it. Mana only comes from zapping.
+    mage: {
+      // Left click (hold to keep firing): a weak, short-range, inaccurate zap. Each enemy it hits adds
+      // mana. Doesn't pierce or stagger, and its stun is too short to lock an enemy down.
+      zap: {
+        bufferMs: 120,
+        cooldownMs: 120,      // also the rate of fire while held
+        speed: 720,
+        range: 300,           // fizzles after travelling this far
+        spreadDeg: 9,         // random +/- deviation per zap
+        damage: 0.5,          // halves and quarters only: 0.3 and the like don't add up exactly
+        knockback: 60,
+        stunMs: 0,
+        hitstopMs: 0,
+        killHitstopMs: 30,
+        hitShake: { duration: 30, intensity: 0.0012 },
+        mana: 4,              // per enemy hit
+      },
+
+      // Right click: lob a fireball to the cursor (or along the stick, as far as it's tilted). It
+      // explodes where it lands, sets everything in the blast burning, and leaves the ground on fire.
+      fireball: {
+        bufferMs: 160,
+        cost: 35,
+        cooldownMs: 650,      // counted from the throw
+        range: 360,           // furthest landing spot: half the screen's height, well short of its width
+        minAirMs: 180,        // flight time grows with the distance, between these
+        maxAirMs: 420,
+        height: 60,           // peak of the arc at full range, visual only
+        radius: 80,           // from the landing spot to an enemy's edge
+        damage: 2,
+        knockback: 0,         // the blast doesn't push enemies away
+        hitstopMs: 40,        // freezes what the blast hit, not the mage
+        shake: { duration: 90, intensity: 0.005 },
+        // Another fireball restarts the burn rather than stacking a second one. Keep the damage a
+        // half or a quarter: amounts like 0.3 don't add up exactly and can leave an enemy on a sliver.
+        burn: { damage: 0.5, tickMs: 700, durationMs: 2100 },
+        // The ground where it lands keeps burning, as wide as the blast, setting alight any enemy that
+        // steps in (or stays).
+        ground: { durationMs: 3000 },
+      },
+
+      // Space: teleport to the cursor (or along the stick, as far as it's tilted), at most `range` away.
+      blink: {
+        bufferMs: 120,
+        cost: 25,
+        cooldownMs: 1500,     // counted from the blink
+        range: 180,
+        invulnMs: 150,        // untouchable this long after arriving
+      },
+
+      // Doesn't refill on its own: zap hits are the only way to get it back.
+      mana: {
+        max: 100,
+        start: 50,
       },
     },
   },

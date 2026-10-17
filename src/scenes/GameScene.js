@@ -169,22 +169,27 @@ export class GameScene extends Phaser.Scene {
     this.damagePlayer(player, bullet.damage, dir, bullet.knockback);
   }
 
-  // Bolts pierce: each enemy is hit once, and every one already passed through adds damage.
-  // bolt.cfg is the shooter's tuning (see TUNING.classes.knight.ranged).
+  // A player's projectile landing. bolt.cfg is the shooter's tuning (see TUNING.classes.knight.ranged
+  // and TUNING.classes.mage.zap): a piercing bolt hits each enemy once, every one already passed through
+  // adding damage; any other bolt stops at the first. bolt.hitSound names its sfx (boltHit if unset),
+  // and bolt.onHit(enemy), if set, is told about each hit.
   onBoltHit(bolt, enemy) {
     if (!bolt.active || enemy.dying || bolt.pierced.has(enemy)) return;
     const now = this.time.now;
     const R = bolt.cfg;
-    const damage = R.damage + R.pierceBonus * bolt.pierced.size;
+    const damage = R.damage + (R.pierce ? R.pierceBonus * bolt.pierced.size : 0);
     bolt.pierced.add(enemy);
     const dir = bolt.body.velocity.clone().normalize();
     this.fx.shake(R.hitShake);
-    if (this.strikeEnemy(enemy, { damage, dir, knockback: R.knockback, stunMs: R.stunMs, heavy: true }, now, 0.4)) {
+    const hit = { damage, dir, knockback: R.knockback, stunMs: R.stunMs, heavy: R.heavy };
+    if (this.strikeEnemy(enemy, hit, now, R.heavy ? 0.4 : 0.2)) {
       this.hitstop(R.killHitstopMs, bolt);
     } else {
-      sfx.boltHit(enemy.x, enemy.y);
-      this.hitstop(R.hitstopMs, bolt, enemy);
+      sfx[bolt.hitSound ?? 'boltHit'](enemy.x, enemy.y);
+      if (R.hitstopMs > 0) this.hitstop(R.hitstopMs, bolt, enemy);
     }
+    bolt.onHit?.(enemy);
+    if (!R.pierce) bolt.destroy();
   }
 
   // A player's attack landing on `enemy` (hit as in Enemy.takeHit): sparks where it struck, then the
@@ -198,6 +203,17 @@ export class GameScene extends Phaser.Scene {
     }
     this.fx.flash(enemy);
     this.fx.squash(enemy, squash);
+    return false;
+  }
+
+  // Burn damage (see Enemy.ignite): no knockback, no stun, nothing to interrupt. Returns true if it killed.
+  burnEnemy(enemy, damage) {
+    enemy.hp -= damage;
+    if (enemy.hp <= 0) {
+      this.killEnemy(enemy);
+      return true;
+    }
+    this.fx.flash(enemy, 50);
     return false;
   }
 

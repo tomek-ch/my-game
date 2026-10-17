@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { TUNING } from './tuning.js';
 import { ART_SCALE } from './art.js';
-import { BLOOD, SPLAT_VARIANTS } from './textures.js';
+import { BLOOD, FIRE_TINT, SPLAT_VARIANTS } from './textures.js';
 import { pixelSector } from './pixelShapes.js';
 
 const S = ART_SCALE;
@@ -42,6 +42,16 @@ export class Fx {
       speed: { min: 0, max: 20 },
       emitting: false,
     }).setDepth(11);
+
+    // Off burning enemies: sparks that rise and fade.
+    this.embers = scene.add.particles(0, 0, 'px', {
+      speedX: { min: -25, max: 25 },
+      speedY: { min: -110, max: -50 },
+      lifespan: { min: 220, max: 420 },
+      scale: { start: S * 1.5, end: S / 2 },
+      tint: [FIRE_TINT, 0xffd34d, 0xc4361b],
+      emitting: false,
+    }).setDepth(20);
   }
 
   hitSparks(x, y) {
@@ -58,6 +68,11 @@ export class Fx {
 
   stain(x, y, pixels, tint) {
     this.stains.stamp('px', undefined, Math.round(x / S), Math.round(y / S), { scale: pixels, tint, originX: 0, originY: 0 });
+  }
+
+  // An ember rising from somewhere over a burning body of `radius` at (x, y).
+  ember(x, y, radius) {
+    this.embers.emitParticleAt(x + Phaser.Math.FloatBetween(-radius, radius) * 0.7, y - Phaser.Math.FloatBetween(0, radius));
   }
 
   projectileTrail(x, y, tint, count = 1) {

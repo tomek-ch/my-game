@@ -8,6 +8,7 @@ import { isFrozen } from '../hitstop.js';
 // Base enemy: walks at its target, the nearest player. Subclasses override think() and use enter()/stateT for simple
 // state machines. stateT counts seconds of unfrozen time, so hitstop doesn't eat telegraphs.
 const RUN_MIN_SPEED = 20; // px/s; slower than this shows the idle loop
+const EMBER_MS = 70;      // how often a burning enemy gives off an ember
 
 export class Enemy extends Phaser.Physics.Arcade.Sprite {
   constructor(scene, x, y, type) {
@@ -33,6 +34,8 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.facing = 0; // radians; logic reads this, never the sprite's rotation
     this.telegraphGfx = null;
     this.windupSound = null; // handle of a telegraph sound to cut off if interrupted
+    this.burn = null; // set on fire by the mage, see ignite()
+    this.nextEmberAt = 0;
     this.on('destroy', () => this.telegraphGfx?.destroy());
   }
 
@@ -58,6 +61,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   }
 
   tick(dt, now) {
+    if (this.burnTick(now)) return;
     this.stateT += dt;
     // Switch to whoever is nearest while chasing; an attack in progress stays on its target.
     if (this.mode === 'chase' || !this.target?.alive) this.target = this.scene.nearestPlayer(this.x, this.y);
@@ -67,6 +71,24 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
       return;
     }
     this.think(this.target, dt, now);
+  }
+
+  // Burning: `damage` every tickMs for durationMs. Igniting a burning enemy restarts the burn without
+  // stacking a second one. burn: { damage, tickMs, durationMs }.
+  ignite(now, { damage, tickMs, durationMs }) {
+    this.burn = { damage, tickMs, nextAt: this.burn?.nextAt ?? now + tickMs, until: now + durationMs };
+  }
+
+  // Deals any burn damage that's due. Returns true if it killed.
+  burnTick(now) {
+    const burn = this.burn;
+    if (!burn) return false;
+    while (now >= burn.nextAt && burn.nextAt <= burn.until) {
+      burn.nextAt += burn.tickMs;
+      if (this.scene.burnEnemy(this, burn.damage)) return true;
+    }
+    if (now >= burn.until) this.burn = null;
+    return false;
   }
 
   // Called when a stun cuts off whatever the enemy was doing.
@@ -156,6 +178,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.shadow.sync();
     this.setFlipX(Math.cos(this.facing) < 0);
     this.setDepth(ySortDepth(this.y));
+    this.syncEmbers(this.scene.time.now);
     if (isFrozen(this, this.scene.time.now)) return; // animation paused until the hitstop ends
     const speed = this.body.velocity.length();
     const moving = speed >= RUN_MIN_SPEED;
@@ -163,8 +186,15 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.anims.timeScale = moving ? Phaser.Math.Clamp(speed / this.cfg.maxSpeed, 0.6, 2) : 1;
   }
 
+  syncEmbers(now) {
+    if (!this.burn || now < this.nextEmberAt) return;
+    this.nextEmberAt = now + EMBER_MS;
+    this.scene.fx.ember(this.x, this.y, this.radius);
+  }
+
   die() {
     this.dying = true;
+    this.burn = null;
     this.body.enable = false;
     this.stopWindupSound();
     this.clearTelegraph();
