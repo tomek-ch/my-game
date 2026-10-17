@@ -23,7 +23,17 @@ const FLIP_X = 2;
 const FLIP_Y = 4;
 const TINT_FILL = 8;
 
+// Where the smoothly changing fields sit in an entry, for blending between snapshots.
+const BLENDED = {
+  i: { x: 4, y: 5, sx: 6, sy: 7, rotation: 10, alpha: 12 },
+  g: { x: 2, y: 3, sx: 4, sy: 5, rotation: 6, alpha: 8 },
+};
+const SNAP_DISTANCE = 100; // px between snapshots past which something jumped (a blink) rather than moved
+
 const r1 = (v) => Math.round(v * 10) / 10;
+const lerp = (a, b, t) => a + (b - a) * t;
+// The short way round, so an angle going past ±π doesn't spin the long way.
+const lerpAngle = (a, b, t) => a + Phaser.Math.Angle.Wrap(b - a) * t;
 const r3 = (v) => Math.round(v * 1000) / 1000;
 
 const flagsOf = (o) => (o.visible ? VISIBLE : 0) | (o.flipX ? FLIP_X : 0) | (o.flipY ? FLIP_Y : 0) | (o.tintFill ? TINT_FILL : 0);
@@ -83,6 +93,7 @@ export class MirrorReceiver {
   constructor(scene) {
     this.scene = scene;
     this.objects = new Map(); // id -> game object
+    this.entries = new Map(); // id -> its entry in the last snapshot applied
   }
 
   apply(entries) {
@@ -97,12 +108,31 @@ export class MirrorReceiver {
       }
       if (e[0] === 'g') this.applyGraphics(o, e);
       else this.applyImage(o, e);
+      this.entries.set(id, e);
       this.scene.children.bringToTop(o); // keep the host's order among equal depths
     }
     for (const [id, o] of this.objects) {
       if (seen.has(id)) continue;
       o.destroy();
       this.objects.delete(id);
+      this.entries.delete(id);
+    }
+  }
+
+  // Eases each object from where the last applied snapshot put it toward where `next` (the snapshot
+  // after it, not applied yet) has it, t from 0 to 1. Only position, scale, rotation and alpha move
+  // smoothly; everything else changes when `next` is applied.
+  blend(next, t) {
+    for (const e of next) {
+      const from = this.entries.get(e[1]);
+      const o = this.objects.get(e[1]);
+      if (!from || !o || from[0] !== e[0]) continue;
+      const f = BLENDED[e[0]];
+      if (Math.hypot(e[f.x] - from[f.x], e[f.y] - from[f.y]) > SNAP_DISTANCE) continue;
+      o.setPosition(lerp(from[f.x], e[f.x], t), lerp(from[f.y], e[f.y], t));
+      o.setScale(lerp(from[f.sx], e[f.sx], t), lerp(from[f.sy], e[f.sy], t));
+      o.setRotation(lerpAngle(from[f.rotation], e[f.rotation], t));
+      o.setAlpha(lerp(from[f.alpha], e[f.alpha], t));
     }
   }
 
@@ -148,5 +178,6 @@ export class MirrorReceiver {
   clear() {
     for (const o of this.objects.values()) o.destroy();
     this.objects.clear();
+    this.entries.clear();
   }
 }

@@ -166,6 +166,7 @@ export class GameScene extends Phaser.Scene {
       this.link.send({
         t: 'snap',
         run: this.runId,
+        time: Math.round(now), // for the guest to play snapshots back evenly spaced
         classes: this.classes,
         players: this.players.map((p) => [Math.round(p.x), Math.round(p.y), p.alive]),
         objects: this.mirror.capture(),
@@ -173,7 +174,7 @@ export class GameScene extends Phaser.Scene {
         over: this.isOver ? this.overStats : null,
       });
     }
-    if (events.length) this.link.send({ t: 'fx', run: this.runId, events });
+    if (events.length) this.link.send({ t: 'fx', run: this.runId, time: Math.round(now), events });
   }
 
   livingPlayers() {
