@@ -170,6 +170,10 @@ export class GameScene extends Phaser.Scene {
         classes: this.classes,
         players: this.players.map((p) => [Math.round(p.x), Math.round(p.y), p.alive]),
         objects: this.mirror.capture(),
+        // What moves with each player, for the guest to draw its own where it predicts it to be.
+        attached: this.players.map((p) => [p, p.weapon, p.shadow.image].map((o) => this.mirror.idOf(o))),
+        // The latest input from the guest this frame had, by the guest's clock: what it has caught up to.
+        inputAt: this.players[1].controls.inputAt,
         hud: this.hudData(this.isOver ? this.overAt : now),
         over: this.isOver ? this.overStats : null,
       });

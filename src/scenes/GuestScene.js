@@ -11,6 +11,7 @@ import { Fx } from '../fx.js';
 import { sfx } from '../audio/sfx.js';
 import { localPlayer } from '../localPlayer.js';
 import { CameraFocus, leanCamera, watchedPlayers } from '../camera.js';
+import { Prediction } from '../net/prediction.js';
 
 // The guest's side of an online game. The host runs the whole game and sends what's on screen several
 // times a second (see GameScene.syncGuest and src/net/mirror.js); this scene rebuilds it, draws the
@@ -21,8 +22,12 @@ import { CameraFocus, leanCamera, watchedPlayers } from '../camera.js';
 // Snapshots and effects are played back a little behind the host's clock (PLAYBACK_DELAY_MS), so
 // there's usually a snapshot either side of the moment shown and things move smoothly between them.
 // If snapshots stop coming, the picture holds on the last one rather than guessing ahead.
+//
+// The exception is our own player, which would then answer the keys a round trip plus that delay
+// late: it's drawn where we predict it (src/net/prediction.js), and the camera follows that.
 const PLAYBACK_DELAY_MS = 100; // two snapshots' worth, for the network's unevenness
 const CLOCK_SETTLE = 0.02;     // how fast the estimate of the host's clock follows slower arrivals
+const ME = 1;                  // our player's slot
 
 export class GuestScene extends Phaser.Scene {
   constructor() {
@@ -57,13 +62,13 @@ export class GuestScene extends Phaser.Scene {
     this.effects = new EventPlayer({ sfx, fx: this.fx, hud: null }); // hud: see showSnapshot
     this.controls = new MouseKeyboardControls(this);
     this.sentPresses = Object.fromEntries(PRESSES.map((key) => [key, this.controls[key]]));
-    this.lastInput = null;
     this.snaps = [];      // received, not shown yet, oldest first
     this.fxQueue = [];    // effect batches received, not played yet, oldest first
     this.shown = null;    // the last snapshot applied
     this.players = null;  // [x, y, alive] per player, between `shown` and the next snapshot
     this.clockOffset = null; // the host's clock minus ours (see syncClock)
     this.playbackTime = -Infinity; // the host time being shown
+    this.prediction = new Prediction();
     this.run = null;
     this.hud = null;
     this.overShown = false;
@@ -98,6 +103,16 @@ export class GuestScene extends Phaser.Scene {
     }
     this.syncClock(snap.time);
     this.snaps.push(snap);
+    this.checkPrediction(snap.players[ME], snap.inputAt);
+  }
+
+  // Starts predicting our player once there is one, stops when it dies, and otherwise checks the
+  // prediction against where the host has it (see Prediction).
+  checkPrediction([x, y, alive], inputAt) {
+    const p = this.prediction;
+    if (!alive) p.stop();
+    else if (!p.active) p.start(x, y);
+    else if (inputAt !== null) p.reconcile(x, y, inputAt);
   }
 
   // How far the host's clock is ahead of ours, from a snapshot's send time. The quickest arrival sets
@@ -144,6 +159,7 @@ export class GuestScene extends Phaser.Scene {
   // Follows player 2 as the host's camera follows player 1, and the host's player once ours is dead.
   updateCamera(dt) {
     const players = this.players.map(([x, y]) => ({ x, y }));
+    if (this.prediction.active) players[ME] = this.prediction.pos;
     const alive = this.players.map((p) => p[2]);
     this.cameraFocus.update(players, watchedPlayers(alive, 1), dt);
     const pointer = alive[1] && !this.shown.over ? this.controls.pointer : null;
@@ -151,25 +167,28 @@ export class GuestScene extends Phaser.Scene {
   }
 
   update(_time, delta) {
+    const now = performance.now();
     this.playBack();
     if (!this.shown) return;
-    const me = this.players[1];
-    this.updateCamera(Math.min(delta, 50) / 1000);
+    const dt = Math.min(delta, 50) / 1000;
+    const c = this.controls;
+    const p = this.prediction;
+    c.update(p.active ? p.pos : { x: this.players[ME][0], y: this.players[ME][1] });
+    if (p.active) {
+      p.step(c.move, dt, now);
+      // Our player, its weapon and shadow, drawn where predicted rather than where the host had them.
+      const [x, y] = this.players[ME];
+      this.mirror.offset(this.shown.attached[ME], p.pos.x - x, p.pos.y - y);
+    }
+    this.updateCamera(dt);
     // Every frame, as on the host, for the HUD's own animations (a full bar's flash, the boss bar
     // draining); the numbers are the shown snapshot's. Muting is per machine.
     this.hud.update(this.time.now, { ...this.shown.hud, muted: sfx.muted });
     if (!this.link.open) return;
-    const c = this.controls;
-    c.update({ x: me[0], y: me[1] });
 
-    // Only send what changed; with a mouse that's still most frames, as the camera moves under it.
-    // Input goes before presses, so a press lands with the aim it was made with.
-    const msg = inputMessage(c, this.cameras.main.worldView);
-    const json = JSON.stringify(msg);
-    if (json !== this.lastInput) {
-      this.lastInput = json;
-      this.link.send(msg);
-    }
+    // Every frame, stamped with our clock, so each snapshot can say which input the host had caught up
+    // to (see Prediction). Input goes before presses, so a press lands with the aim it was made with.
+    this.link.send(inputMessage(c, this.cameras.main.worldView, now));
     for (const key of PRESSES) {
       if (c[key] === this.sentPresses[key]) continue;
       this.sentPresses[key] = c[key];

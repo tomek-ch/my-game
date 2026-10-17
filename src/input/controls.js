@@ -116,6 +116,7 @@ export class RemoteControls extends Controls {
   constructor(scene, link) {
     super();
     this.view = null;
+    this.inputAt = null;
     const onInput = (msg) => {
       this.move.set(msg.move[0], msg.move[1]);
       this.aimAngle = msg.aimAngle;
@@ -123,6 +124,7 @@ export class RemoteControls extends Controls {
       this.aimReach = msg.aimReach;
       this.attackHeld = msg.attackHeld;
       this.view = msg.view; // the guest camera's scroll, [x, y], for spawning out of their sight
+      this.inputAt = msg.at; // when the guest sent it, by its clock: the host echoes it (see Prediction)
     };
     const onPress = (msg) => {
       if (PRESSES.includes(msg.button)) this[msg.button] = scene.time.now;
@@ -141,8 +143,8 @@ export class RemoteControls extends Controls {
 }
 
 // The guest's side of RemoteControls: what `controls` read this frame, as an 'input' message.
-// `view` is the guest camera's scroll.
-export function inputMessage(controls, view) {
+// `view` is the guest camera's scroll, `at` the guest's clock (performance.now()).
+export function inputMessage(controls, view, at) {
   const round = (v) => Math.round(v * 100) / 100;
   const { move, aimAngle, aimPoint, aimReach } = controls;
   return {
@@ -153,6 +155,7 @@ export function inputMessage(controls, view) {
     aimReach: aimReach === null ? null : round(aimReach),
     attackHeld: controls.attackHeld,
     view: [Math.round(view.x), Math.round(view.y)],
+    at: Math.round(at * 10) / 10,
   };
 }
 

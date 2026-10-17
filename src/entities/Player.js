@@ -17,6 +17,20 @@ const RUN_MIN_SPEED = 20;       // px/s; slower than this shows the idle loop
 const WEAPON_REST = Phaser.Math.DegToRad(65);
 const WEAPON_SETTLE = 18;       // how fast it eases back to rest (per second, exponential)
 
+// Eases `vel` toward `dir` (a normalized input vector, or zero) times the player's top speed: walking,
+// with no dash, step or stun. Also used online to move the guest's own player ahead of the host.
+export function steerVelocity(vel, dir, dt) {
+  const target = new Phaser.Math.Vector2(dir.x, dir.y).scale(T.maxSpeed);
+  const hasInput = dir.lengthSq() > 0;
+  let rate = hasInput ? T.accel : T.decel;
+  if (hasInput && vel.dot(target) < 0) rate = T.turnAccel;
+
+  const diff = target.subtract(vel);
+  const step = rate * dt;
+  if (diff.length() <= step) vel.add(diff);
+  else vel.add(diff.setLength(step));
+}
+
 // One player's body: movement, health, the dash, and the art. What the buttons do is up to its class
 // (see src/classes/), which is created with the player as `kit`.
 export class Player extends Phaser.Physics.Arcade.Sprite {
@@ -77,15 +91,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       vel.scale(Math.exp(-T.stunFriction * dt));
       return;
     }
-    const target = new Phaser.Math.Vector2(dir.x, dir.y).scale(T.maxSpeed);
-    const hasInput = dir.lengthSq() > 0;
-    let rate = hasInput ? T.accel : T.decel;
-    if (hasInput && vel.dot(target) < 0) rate = T.turnAccel;
-
-    const diff = target.subtract(vel);
-    const step = rate * dt;
-    if (diff.length() <= step) vel.add(diff);
-    else vel.add(diff.setLength(step));
+    steerVelocity(vel, dir, dt);
   }
 
   get alive() {

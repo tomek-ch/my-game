@@ -94,6 +94,7 @@ export class MirrorReceiver {
     this.scene = scene;
     this.objects = new Map(); // id -> game object
     this.entries = new Map(); // id -> its entry in the last snapshot applied
+    this.base = new Map(); // id -> [x, y] where the snapshots put it, before offset()
   }
 
   apply(entries) {
@@ -109,6 +110,7 @@ export class MirrorReceiver {
       if (e[0] === 'g') this.applyGraphics(o, e);
       else this.applyImage(o, e);
       this.entries.set(id, e);
+      this.base.set(id, [o.x, o.y]);
       this.scene.children.bringToTop(o); // keep the host's order among equal depths
     }
     for (const [id, o] of this.objects) {
@@ -116,6 +118,7 @@ export class MirrorReceiver {
       o.destroy();
       this.objects.delete(id);
       this.entries.delete(id);
+      this.base.delete(id);
     }
   }
 
@@ -130,6 +133,7 @@ export class MirrorReceiver {
       const f = BLENDED[e[0]];
       if (Math.hypot(e[f.x] - from[f.x], e[f.y] - from[f.y]) > SNAP_DISTANCE) continue;
       o.setPosition(lerp(from[f.x], e[f.x], t), lerp(from[f.y], e[f.y], t));
+      this.base.set(e[1], [o.x, o.y]);
       o.setScale(lerp(from[f.sx], e[f.sx], t), lerp(from[f.sy], e[f.sy], t));
       o.setRotation(lerpAngle(from[f.rotation], e[f.rotation], t));
       o.setAlpha(lerp(from[f.alpha], e[f.alpha], t));
@@ -175,9 +179,18 @@ export class MirrorReceiver {
     o.setAlpha(alpha).setDepth(depth).setBlendMode(blend);
   }
 
+  // Draws the objects `ids` (dx, dy) from where the snapshots put them.
+  offset(ids, dx, dy) {
+    for (const id of ids) {
+      const base = this.base.get(id);
+      if (base) this.objects.get(id).setPosition(base[0] + dx, base[1] + dy);
+    }
+  }
+
   clear() {
     for (const o of this.objects.values()) o.destroy();
     this.objects.clear();
     this.entries.clear();
+    this.base.clear();
   }
 }
