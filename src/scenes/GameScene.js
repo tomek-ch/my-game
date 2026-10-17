@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { TUNING } from '../tuning.js';
 import { Player } from '../entities/Player.js';
 import { ENEMY_TYPES } from '../entities/enemies/index.js';
+import { summonWarden } from '../entities/enemies/Warden.js';
 import { Spawner } from '../systems/Spawner.js';
 import { addDungeon } from '../world/dungeon.js';
 import { ART_SCALE } from '../art.js';
@@ -14,6 +15,8 @@ import { CLASSES } from '../classes/index.js';
 
 const MAX_PLAYERS = 2;
 const LEASH_MARGIN = 40; // co-op players can't walk further apart than the screen, minus this
+// ?boss=<seconds> makes the warden arrive then instead of at its usual time, for testing.
+const BOSS_AT = Number(new URLSearchParams(location.search).get('boss') ?? NaN);
 
 export class GameScene extends Phaser.Scene {
   constructor() {
@@ -69,6 +72,10 @@ export class GameScene extends Phaser.Scene {
     sfx.listener = this.focus;
     this.input.keyboard.on('keydown-M', () => sfx.toggleMute());
     this.spawner = new Spawner(this, (x, y, type) => this.spawnEnemy(x, y, type));
+    // The boss arrives once, at a set time; the waves keep coming around it.
+    this.boss = null;
+    const bossAt = Number.isFinite(BOSS_AT) ? BOSS_AT : TUNING.enemies.warden.arrival.at;
+    this.time.delayedCall(bossAt * 1000, () => !this.isOver && summonWarden(this));
 
     this.input.on('pointerdown', () => this.isOver && this.tryRestart());
     this.input.keyboard.on('keydown-R', () => this.isOver && this.tryRestart());
@@ -269,6 +276,21 @@ export class GameScene extends Phaser.Scene {
     const enemy = new ENEMY_TYPES[type](this, x, y);
     this.enemies.add(enemy);
     enemy.setupBody();
+    if (type === 'warden') this.boss = enemy;
+    return enemy;
+  }
+
+  // The boss is down: the run goes on, with every living player healed a little.
+  wardenSlain(warden) {
+    if (this.boss === warden) this.boss = null;
+    const heal = TUNING.enemies.warden.rewardHeal;
+    for (const p of this.livingPlayers()) {
+      if (p.hp >= TUNING.player.maxHp) continue;
+      p.hp = Math.min(TUNING.player.maxHp, p.hp + heal);
+      this.fx.flash(p, 160);
+    }
+    sfx.shotReady();
+    this.hud.bossSlain('Warden slain');
   }
 
   syncVisuals() {
@@ -420,6 +442,7 @@ export class GameScene extends Phaser.Scene {
       kills: this.kills,
       secs: Math.floor((now - this.startedAt) / 1000),
       muted: sfx.muted,
+      boss: this.boss?.hudInfo ?? null,
     });
   }
 

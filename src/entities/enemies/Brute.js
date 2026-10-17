@@ -15,8 +15,9 @@ const CROUCH_SQUASH = 0.18;
 // Light hits only chip it; a heavy hit (combo finisher) staggers it and cancels a swing or crouch.
 // The swing and slam also hit other enemies.
 export class Brute extends Enemy {
-  constructor(scene, x, y) {
-    super(scene, x, y, 'brute');
+  // type: a bigger enemy built on the brute (the warden) passes its own.
+  constructor(scene, x, y, type = 'brute') {
+    super(scene, x, y, type);
     this.cooldownLeft = 0;
     this.jumpCooldownLeft = 0;
     this.aim = 0;
@@ -197,7 +198,7 @@ export class Brute extends Enemy {
   // Draws the sprite `px` above its body. The body and shadow stay on the ground: shifting the origin
   // alone would drag the body along, so its offset moves by the same amount.
   setLift(px) {
-    const d = px / ART_SCALE;
+    const d = px / this.baseScale;
     this.setOrigin(this.art.center.x / this.width, (this.art.center.y + d) / this.height);
     this.body.setOffset(this.bodyOffset.x, this.bodyOffset.y + d);
   }

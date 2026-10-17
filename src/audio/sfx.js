@@ -214,6 +214,43 @@ class Sfx {
     ]);
   }
 
+  // The warden's roar, as it arrives and when it gets enraged: a deep growl that rises and drops.
+  wardenRoar(x, y) {
+    return this.play('wardenRoar', x, y, 0, (o) => [
+      this.tone(o, { type: 'sawtooth', freq: 55, to: 90, dur: 0.5, vol: 0.18, attack: 0.15 }),
+      this.tone(o, { type: 'sawtooth', freq: 90, to: 40, dur: 0.6, vol: 0.16, delay: 0.45 }),
+      this.noise(o, { filter: 'lowpass', freq: 400, to: 900, dur: 0.9, vol: 0.45, attack: 0.3 }),
+      this.tone(o, { freq: 45, to: 30, dur: 1, vol: 0.6, attack: 0.2 }),
+    ]);
+  }
+
+  // Rattling links that swell over the chain's warning.
+  wardenChainWindup(x, y, dur) {
+    return this.play('wardenChainWindup', x, y, 0, (o) => [
+      this.noise(o, { filter: 'highpass', freq: 3000, to: 5000, dur, vol: 0.12, attack: dur * 0.8 }),
+      this.tone(o, { type: 'triangle', freq: 70, to: 110, dur, vol: 0.25, attack: dur * 0.8 }),
+    ]);
+  }
+
+  // The chain whirling around: a whoosh for each turn.
+  wardenChainWhirl(x, y, dur) {
+    return this.play('wardenChainWhirl', x, y, 0, (o) => [
+      this.noise(o, { freq: 400, to: 1600, q: 0.8, dur, vol: 0.45, attack: dur * 0.5 }),
+      this.noise(o, { filter: 'highpass', freq: 4000, dur, vol: 0.08 }),
+    ]);
+  }
+
+  // Its poise breaking: a heavy clang and a groan as it drops to a knee.
+  wardenBreak(x, y) {
+    return this.play('wardenBreak', x, y, 0, (o) => [
+      this.tone(o, { type: 'square', freq: 392, dur: 0.5, vol: 0.08 }),
+      this.tone(o, { type: 'square', freq: 587, dur: 0.4, vol: 0.06 }),
+      this.tone(o, { freq: 1175, dur: 0.3, vol: 0.12 }),
+      this.tone(o, { type: 'sawtooth', freq: 110, to: 45, dur: 0.6, vol: 0.15, delay: 0.1 }),
+      this.noise(o, { filter: 'lowpass', freq: 900, to: 150, dur: 0.4, vol: 0.5 }),
+    ]);
+  }
+
   // The mage's throw: a soft whoosh that climbs as the fireball leaves the hand.
   fireballThrow() {
     return this.play('fireballThrow', null, null, 0, (o) => [

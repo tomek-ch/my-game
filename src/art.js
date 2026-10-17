@@ -11,6 +11,7 @@ export const ENEMY_ART = {
   charger: { monster: 'chort', center: { x: 8, y: 17 }, shadow: 12 },
   shooter: { monster: 'necromancer', center: { x: 7, y: 17 }, shadow: 12 },
   brute: { monster: 'big_demon', center: { x: 16, y: 24 }, shadow: 24 },
+  warden: { monster: 'ogre', center: { x: 16, y: 24 }, shadow: 36 },
 };
 
 export function preloadArt(scene) {

@@ -20,9 +20,17 @@ const CHARGE_EMPTY = 0x3a2f45;
 const PLAYER_GAP = 12; // between players' hearts-and-charges blocks
 const LABEL_W = 24;    // room for the P1/P2 label in co-op
 const LABEL_COLORS = [0xf2c14e, 0x5ce1ff];
+const BOSS_W = 160;        // art pixels at UI scale 2 (320 screen pixels) for the boss's health bar
+const BOSS_HP_H = 5;
+const BOSS_POISE_H = 2;
+const BOSS_SCALE = 2;
+const BOSS_HP = 0xff4d6d;
+const BOSS_ENRAGED = 0xff2a2a;
+const BOSS_POISE = 0xf2c14e;
+const BOSS_LAG_PER_SEC = 0.25; // the chunk just lost drains away at this fraction of the bar per second
 
 // For each player, hearts (one per HP) with their class's resource under them (see WIDGETS); then a
-// skull with the kill count, the run timer, and the game-over screen.
+// skull with the kill count, the run timer, the boss's bar while there is one, and the game-over screen.
 export class Hud {
   // classes: each player's class (see src/classes/), in HUD row order.
   constructor(scene, maxHp, classes) {
@@ -64,6 +72,8 @@ export class Hud {
     const right = scene.cameras.main.width - MARGIN;
     this.timer = this.fixed(pixelText(scene, right, MARGIN, '0:00', UI).setOrigin(1, 0));
     this.muted = this.fixed(pixelText(scene, right, MARGIN + 30, '[M] muted', 2).setOrigin(1, 0).setAlpha(0.7));
+
+    this.bossBar = null; // { name, g, lag }, see announceBoss
   }
 
   fixed(obj) {
@@ -71,7 +81,8 @@ export class Hud {
   }
 
   // players: each player's { hp, resource } (resource is the class's hudValue), in HUD row order.
-  update(now, { players, kills, secs, muted }) {
+  // boss: the boss's hudInfo (see Warden), or null when there's none.
+  update(now, { players, kills, secs, muted, boss }) {
     players.forEach(({ hp, resource }, p) => {
       const row = this.rows[p];
       this.updateHearts(row, Math.max(hp, 0), now);
@@ -80,11 +91,14 @@ export class Hud {
     this.kills.setText(String(kills));
     this.timer.setText(`${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`);
     this.muted.setVisible(muted);
+    if (boss) this.updateBossBar(boss, now);
   }
 
   updateHearts(row, hp, now) {
+    hp = Math.min(hp, row.hearts.length);
     for (let i = hp; i < row.shownHp; i++) this.loseHeart(row.hearts[i]);
-    row.shownHp = Math.min(row.shownHp, hp);
+    for (let i = row.shownHp; i < hp; i++) this.gainHeart(row.hearts[i]);
+    row.shownHp = hp;
 
     // The last heart beats.
     const last = row.hearts[0];
@@ -110,6 +124,75 @@ export class Hud {
       },
     });
     this.scene.time.delayedCall(90, () => heart.clearTint());
+  }
+
+  gainHeart(heart) {
+    heart.setFrame('ui_heart_full').setScale(HEART_SCALE * 1.8);
+    heart.popping = true;
+    this.scene.tweens.add({
+      targets: heart,
+      scale: HEART_SCALE,
+      duration: 320,
+      ease: 'Back.easeOut',
+      onComplete: () => { heart.popping = false; },
+    });
+  }
+
+  // Big words across the middle of the screen that pop in, hold, then fade.
+  banner(text, tint) {
+    const { width, height } = this.scene.cameras.main;
+    const title = this.fixed(pixelText(this.scene, width / 2, height * 0.3, text, 1).setOrigin(0.5).setTint(tint));
+    this.scene.tweens.add({ targets: title, scale: 8, duration: 280, ease: 'Back.easeOut' });
+    this.scene.tweens.add({ targets: title, alpha: 0, delay: 1600, duration: 500, onComplete: () => title.destroy() });
+  }
+
+  // The boss is here: its name across the screen, and its bar at the bottom from now until it falls.
+  announceBoss(title) {
+    this.banner(title, BOSS_HP);
+    this.bossBar?.name.destroy();
+    this.bossBar?.g.destroy();
+    const { width, height } = this.scene.cameras.main;
+    const barTop = height - MARGIN - (BOSS_HP_H + BOSS_POISE_H + 2) * BOSS_SCALE;
+    const name = this.fixed(pixelText(this.scene, width / 2, barTop - 6, title, 2).setOrigin(0.5, 1));
+    this.bossBar = { name, g: this.fixed(this.scene.add.graphics()), lag: 1, left: (width - BOSS_W * BOSS_SCALE) / 2, top: barTop, at: 0 };
+  }
+
+  bossSlain(text) {
+    this.banner(text, 0xffe08a);
+    const bar = this.bossBar;
+    if (!bar) return;
+    this.bossBar = null;
+    this.scene.tweens.add({
+      targets: [bar.name, bar.g],
+      alpha: 0,
+      duration: 600,
+      onComplete: () => { bar.name.destroy(); bar.g.destroy(); },
+    });
+  }
+
+  // Health on top, with the chunk just lost shown white and draining; poise under it, gold, or white
+  // and running down for as long as the boss is broken.
+  updateBossBar({ hp, poise, broken, enraged }, now) {
+    const bar = this.bossBar;
+    if (!bar) return;
+    const dt = bar.at ? (now - bar.at) / 1000 : 0;
+    bar.at = now;
+    bar.lag = Math.max(hp, bar.lag - BOSS_LAG_PER_SEC * dt);
+    const s = BOSS_SCALE;
+    const { left: x, top: y } = bar;
+    const inner = BOSS_W - 2;
+    const fill = (frac) => Math.round(inner * Phaser.Math.Clamp(frac, 0, 1)) * s;
+    const g = bar.g.clear();
+
+    g.fillStyle(0x1a1016).fillRect(x, y, BOSS_W * s, (BOSS_HP_H + BOSS_POISE_H + 2) * s);
+    g.fillStyle(CHARGE_EMPTY).fillRect(x + s, y + s, inner * s, (BOSS_HP_H - 1) * s);
+    g.fillStyle(0xffffff, 0.8).fillRect(x + s, y + s, fill(bar.lag), (BOSS_HP_H - 1) * s);
+    g.fillStyle(enraged ? BOSS_ENRAGED : BOSS_HP).fillRect(x + s, y + s, fill(hp), (BOSS_HP_H - 1) * s);
+
+    const py = y + (BOSS_HP_H + 1) * s;
+    g.fillStyle(CHARGE_EMPTY).fillRect(x + s, py, inner * s, BOSS_POISE_H * s);
+    const flash = broken && Math.floor(now / 100) % 2 === 0;
+    g.fillStyle(broken ? (flash ? 0xffffff : 0xffe08a) : BOSS_POISE).fillRect(x + s, py, fill(poise), BOSS_POISE_H * s);
   }
 
   showGameOver({ kills, secs }) {

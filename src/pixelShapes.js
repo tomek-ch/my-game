@@ -53,6 +53,34 @@ export function pixelSector(g, cx, cy, inner, outer, from = 0, span = TAU) {
   });
 }
 
+// A full ring between two radii (a disk when inner is 0). Same pixels as pixelSector over a whole
+// turn, but each row is worked out from the circles instead of testing every pixel, so it stays cheap
+// at the size of a shockwave crossing the screen.
+export function pixelRing(g, cx, cy, inner, outer) {
+  const s = ART_SCALE;
+  const in2 = inner * inner;
+  const out2 = outer * outer;
+  const y0 = Math.floor((cy - outer) / s);
+  const y1 = Math.ceil((cy + outer) / s);
+  // Pixel columns whose centers are within `half` of cx: from first to last.
+  const span = (half) => [Math.ceil((cx - half) / s - 0.5), Math.floor((cx + half) / s - 0.5)];
+  for (let py = y0; py < y1; py++) {
+    const dy2 = ((py + 0.5) * s - cy) ** 2;
+    if (dy2 > out2) continue;
+    const [a, b] = span(Math.sqrt(out2 - dy2));
+    if (dy2 >= in2) {
+      if (b >= a) g.fillRect(a * s, py * s, (b - a + 1) * s, s);
+      continue;
+    }
+    // The row crosses the hole: a run on each side of it, leaving out pixels strictly inside.
+    const hole = Math.sqrt(in2 - dy2);
+    const [ha, hb] = [Math.floor((cx - hole) / s - 0.5) + 1, Math.ceil((cx + hole) / s - 0.5) - 1];
+    if (ha - 1 >= a) g.fillRect(a * s, py * s, (ha - a) * s, s);
+    if (b >= hb + 1) g.fillRect((hb + 1) * s, py * s, (b - hb) * s, s);
+  }
+  return g;
+}
+
 // A straight band `width` px wide from (x1, y1) to (x2, y2).
 export function pixelLine(g, x1, y1, x2, y2, width) {
   const dx = x2 - x1;

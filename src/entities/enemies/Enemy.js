@@ -41,13 +41,18 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
 
   // Call after adding to a physics group: the group resets body settings when it adopts a child.
   setupBody() {
-    const r = this.radius / ART_SCALE;
+    const r = this.radius / this.baseScale;
     this.body.setCircle(r, this.art.center.x - r, this.art.center.y - r);
     this.body.setMass(this.cfg.mass);
     this.setCollideWorldBounds(true);
+    this.shadow = new Shadow(this, this.art.shadow, this.radius);
+    this.popIn();
+  }
+
+  // Grows in from nothing as it spawns.
+  popIn() {
     this.setScale(0);
     this.scene.tweens.add({ targets: this, scale: this.baseScale, duration: 220, ease: 'Back.easeOut' });
-    this.shadow = new Shadow(this, this.art.shadow, this.radius);
     this.shadow.fadeIn(220);
   }
 

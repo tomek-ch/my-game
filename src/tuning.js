@@ -312,6 +312,107 @@ export const TUNING = {
       // Its swing and slam also hit other enemies. Enough to kill a grunt, charger or shooter outright.
       friendlyFire: { damage: 3, knockback: 520, stunMs: 400 },
     },
+
+    // Boss: a huge brute that drops in once, at arrival.at, while the waves carry on. It has the brute's
+    // swing and leap (fields as in brute.attack and brute.jump), plus a chain it whirls around itself, and
+    // its slam sends out shockwave rings. Hits don't flinch it; they wear down its poise, and when that
+    // runs out it's stunned for a while and takes extra damage. Below enraged.belowHp it gets faster.
+    warden: {
+      radius: 36, hp: 120, maxSpeed: 80, accel: 380, stunMs: 0, knockbackFriction: 6,
+      contactDamage: 0, mass: 20, color: 0x9aa0a6,
+      scale: 1.5,               // drawn this much bigger than the art's usual scale
+
+      // Open the game with ?boss=<seconds> to have it arrive then instead.
+      arrival: {
+        at: 150,                // seconds into the run
+        warnMs: 1800,           // its name shows and its landing spot fills in for this long...
+        dropMs: 350,            // ...the last part of which it spends falling into view
+        distance: 240,          // lands this far from the players, in a random direction
+      },
+
+      poise: {
+        max: 20,
+        heavyMultiplier: 2.5,   // a heavy hit (finisher, bolt, raging strike...) takes damage x this
+        regenDelayMs: 2500,     // poise refills after this long without a hit...
+        regenPerSec: 8,         // ...at this rate
+        brokenMs: 3200,         // stunned this long when it runs out, then it's back to full
+        brokenDamageMultiplier: 1.5,
+      },
+
+      enraged: {
+        belowHp: 0.5,           // fraction of its hp
+        windupScale: 0.75,      // windups, crouches and the chain's warning take this much of the time
+        speedScale: 1.25,
+      },
+
+      attack: {
+        triggerRange: 120,
+        reach: 160,
+        arcDeg: 220,
+        windupMs: 850,
+        recoveryMs: 650,
+        cooldownMs: 800,
+        damage: 2,
+        knockback: 700,
+        lunge: 50,
+        shake: { duration: 140, intensity: 0.009 },
+      },
+
+      // Shows the whole circle it reaches with the chain on the floor, then whirls it once around (twice when
+      // enraged), starting from behind itself. Get out of reach, or dash through it.
+      chain: {
+        reach: 250,             // from its center to the end of the ball
+        triggerRange: 220,      // starts when the player's edge is this close, but too far for the swing
+        firstCooldownMs: 4000,  // after arriving
+        windupMs: 1000,
+        sweepMs: 1100,          // per turn
+        turns: 1,
+        enragedTurns: 2,
+        recoveryMs: 700,
+        cooldownMs: 6500,       // counted from the start of the windup
+        damage: 2,
+        knockback: 650,
+        ballRadius: 12,
+        shake: { duration: 90, intensity: 0.004 },
+      },
+
+      jump: {
+        minRange: 200,
+        maxRange: 440,
+        maxLeap: 380,
+        crouchMs: 650,
+        airMs: 600,
+        height: 130,
+        radius: 110,
+        recoverMs: 900,
+        cooldownMs: 3200,
+        damage: 2,
+        knockback: 750,
+        shake: { duration: 220, intensity: 0.016 },
+      },
+
+      // Every slam (the arrival's too) sends rings racing outward from where it landed. Each hits a player
+      // once, unless they're untouchable as it reaches them: dash, blink or leap through it.
+      rings: {
+        count: 1,
+        enragedCount: 2,
+        gapMs: 380,             // between rings of the same slam
+        speed: 290,
+        width: 28,              // the part that hits...
+        edgeWidth: 6,           // ...led by a bright edge this thick
+        glowWidth: 40,          // faint glow trailing behind, harmless
+        maxRadius: 560,
+        dustEveryMs: 30,        // dust kicked up along the front, this many puffs at a time
+        dustPerPuff: 4,
+        damage: 1,
+        knockback: 420,
+      },
+
+      friendlyFire: { damage: 3, knockback: 560, stunMs: 400 },
+
+      // Killing it heals every living player this many hearts.
+      rewardHeal: 2,
+    },
   },
 
   spawn: {
