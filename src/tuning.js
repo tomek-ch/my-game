@@ -91,7 +91,7 @@ export const TUNING = {
     },
 
     // No plain dash: the attack is the dash. Hits fill a momentum bar that drains if you stop hitting;
-    // a full bar buys a whirlwind.
+    // one bar's worth (half of it) buys a whirlwind.
     berserker: {
       // Dash toward the aim, cutting through everything in the way. A strike that hits something can
       // be chained straight into the next one; a miss leaves you on cooldown.
@@ -135,8 +135,8 @@ export const TUNING = {
         rageAt: 50,           // at or above: harder strikes that go through brutes
       },
 
-      // Needs a full bar: spin and hit everything around you. Spends only `cost` of it (the half above
-      // rageAt), so you come out of it still raging; kills refund some.
+      // Spends `cost` of the bar (one of its two halves): spin and hit everything around you. From a
+      // full bar you come out of it still raging. Kills refund some.
       spin: {
         bufferMs: 160,
         cost: 50,

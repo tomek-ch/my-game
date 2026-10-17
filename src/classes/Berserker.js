@@ -14,8 +14,8 @@ const STRIKE_SWING_DEG = 110; // the axe starts this far to one side of the stri
 // A strike that hits can be chained straight into the next; a miss, or bouncing off a brute, puts it
 // on cooldown. Hits fill the
 // momentum bar, which drains when you stop hitting. Past half, strikes hit harder and go through
-// brutes; a full bar buys a whirlwind that hits everything around you and spends only half the bar,
-// so you come out of it still raging.
+// brutes; half the bar buys a whirlwind that hits everything around you, so from a full bar you can
+// spin twice, or once and stay raging.
 export class Berserker extends HeroClass {
   static id = 'berserker';
   static title = 'Berserker';
@@ -26,7 +26,7 @@ export class Berserker extends HeroClass {
     { action: 'Move', kbm: 'WSAD', pad: 'Left stick' },
     { action: 'Aim', kbm: 'Mouse', pad: 'Right stick' },
     { action: 'Dash strike - hits chain it', kbm: 'Left click / Space', pad: 'RB / RT / A' },
-    { action: 'Whirlwind - full bar', kbm: 'Right click', pad: 'LB' },
+    { action: 'Whirlwind - half bar', kbm: 'Right click', pad: 'LB' },
   ];
 
   constructor(scene, player) {
@@ -245,7 +245,7 @@ export class Berserker extends HeroClass {
     draw(EDGE_TINT, 1, (f, rim) => rim);
   }
 
-  // Fire with a full bar: hit everything around you. Waits for a strike in progress to finish.
+  // Fire with half a bar or more: hit everything around you. Waits for a strike in progress to finish.
   trySpin(now) {
     const p = this.player;
     const scene = this.scene;
@@ -253,12 +253,12 @@ export class Berserker extends HeroClass {
     const c = p.controls;
     if (p.isDashing || now - c.shootQueuedAt > W.bufferMs) return;
     c.shootQueuedAt = -Infinity;
-    if (this.meter < this.cfg.meter.max) {
+    if (this.meter < W.cost) {
       sfx.shotEmpty();
       scene.hud.shakeResource(this.playerIndex);
       return;
     }
-    // Spend the top half: what's left keeps you raging, held there for a moment.
+    // Spend one half; whatever's left is held there for a moment.
     this.meter -= W.cost;
     this.holdUntil = now + W.holdMs;
 
@@ -302,7 +302,9 @@ export class Berserker extends HeroClass {
     this.meter = Math.min(this.meter + amount, M.max);
     this.lastGainAt = now;
     const p = this.player;
-    if (this.meter >= M.max && before < M.max) {
+    // A ring and a chime for each whirlwind that becomes affordable.
+    const cost = this.cfg.spin.cost;
+    if (Math.floor(this.meter / cost) > Math.floor(before / cost)) {
       this.scene.fx.readyRing(p, TUNING.player.radius, RAGE_TINT);
       sfx.shotReady();
     } else if (this.meter >= M.rageAt && before < M.rageAt) {
