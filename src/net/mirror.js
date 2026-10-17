@@ -1,10 +1,11 @@
 import Phaser from 'phaser';
 import { shadowTexture } from '../textures.js';
+import { packCommands, unpackCommands } from './packCommands.js';
 
 // Online co-op shows the guest the host's game by copying what's on screen rather than the game state.
 // Each snapshot lists the host's world objects in display order: images and sprites as their texture,
-// frame and transform, graphics as their command buffer (the shapes they draw, as plain numbers). The
-// guest rebuilds them as plain images and graphics with no logic of their own.
+// frame and transform, graphics as their command buffer (the shapes they draw, packed small, see
+// packCommands.js). The guest rebuilds them as plain images and graphics with no logic of their own.
 //
 // Not copied: the dungeon (both sides build the same one), anything fixed to the screen (the HUD, which
 // the guest draws from the host's HUD data instead), particles and render textures (blood stains).
@@ -34,7 +35,7 @@ export class MirrorSender {
     this.skip = new Set(scene.children.list);
     this.ids = new WeakMap();
     this.nextId = 1;
-    this.sentCommands = new WeakMap(); // graphics -> JSON of the commands last sent
+    this.sentCommands = new WeakMap(); // graphics -> JSON of the packed commands last sent
   }
 
   idOf(o) {
@@ -67,12 +68,13 @@ export class MirrorSender {
   }
 
   graphics(o) {
-    const json = JSON.stringify(o.commandBuffer);
+    const packed = packCommands(o.commandBuffer);
+    const json = JSON.stringify(packed);
     const changed = this.sentCommands.get(o) !== json;
     if (changed) this.sentCommands.set(o, json);
     return [
       'g', this.idOf(o), r1(o.x), r1(o.y), r3(o.scaleX), r3(o.scaleY), r3(o.rotation), flagsOf(o),
-      r3(o.alpha), r1(o.depth), o.blendMode, changed ? o.commandBuffer : null,
+      r3(o.alpha), r1(o.depth), o.blendMode, changed ? packed : null,
     ];
   }
 }
@@ -138,7 +140,7 @@ export class MirrorReceiver {
   }
 
   applyGraphics(o, [, , x, y, sx, sy, rotation, flags, alpha, depth, blend, commands]) {
-    if (commands) o.commandBuffer = commands;
+    if (commands) o.commandBuffer = unpackCommands(commands);
     o.setPosition(x, y).setScale(sx, sy).setRotation(rotation).setVisible(!!(flags & VISIBLE));
     o.setAlpha(alpha).setDepth(depth).setBlendMode(blend);
   }
