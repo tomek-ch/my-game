@@ -3,14 +3,16 @@ import { TUNING } from '../tuning.js';
 import { sfx } from '../audio/sfx.js';
 import { HeroClass } from './HeroClass.js';
 import { isFrozen } from '../entities/hitstop.js';
-import { pixelSpearhead, pixelSpike, spearheadBackEdge } from '../pixelShapes.js';
+import { pixelSector, pixelSpearhead, pixelSpike, spearheadBackEdge } from '../pixelShapes.js';
+import { ART_SCALE } from '../art.js';
 
 export const MOMENTUM_TINT = 0xff8a3d;
 export const RAGE_TINT = 0xff3b3b;
 const EDGE_TINT = 0xffe2b8; // the strike's leading edge
 const STRIKE_SWING_DEG = 110; // the axe starts this far to one side of the strike and ends at rest on the other
 
-// No plain dash: the attack is a dash strike toward the aim that cuts through everything in its path.
+// No plain dash: the attack is a dash strike toward the aim that cuts through everything in its path,
+// and right click leaps to the aim and slams down, which also gets you out of trouble after a miss.
 // A strike that hits can be chained straight into the next; a miss, or bouncing off a brute, puts it
 // on cooldown. Hits fill the
 // momentum bar, which drains when you stop hitting. Past half, strikes hit harder and go through
@@ -25,8 +27,9 @@ export class Berserker extends HeroClass {
   static controls = [
     { action: 'Move', kbm: 'WSAD', pad: 'Left stick' },
     { action: 'Aim', kbm: 'Mouse', pad: 'Right stick' },
-    { action: 'Dash strike - hits chain it', kbm: 'Left click / Space', pad: 'RB / RT / A' },
-    { action: 'Whirlwind - half bar', kbm: 'Right click', pad: 'LB' },
+    { action: 'Dash strike - hits chain it', kbm: 'Left click', pad: 'RB' },
+    { action: 'Leap slam', kbm: 'Right click', pad: 'LB' },
+    { action: 'Whirlwind - half bar', kbm: 'Space', pad: 'RT / A' },
   ];
 
   constructor(scene, player) {
@@ -35,6 +38,10 @@ export class Berserker extends HeroClass {
     this.lastGainAt = -Infinity;
     this.holdUntil = 0;       // no draining before this, see TUNING.classes.berserker.spin.holdMs
     this.strike = null;       // the strike in progress, see tryStrike()
+    this.leap = null;         // the leap in progress, see tryLeap()
+    this.nextLeapAt = 0;
+    this.leapShown = true;    // whether the leap-back ring has played since the last landing
+    this.marker = scene.add.graphics().setDepth(4); // the landing spot, with the telegraphs
     this.side = 1;            // strikes alternate which way the axe swings
     this.cooldownShown = true; // whether the dash-back ring has played since the last miss
     this.head = scene.add.graphics();
@@ -45,6 +52,7 @@ export class Berserker extends HeroClass {
     player.on('destroy', () => {
       this.head.destroy();
       this.lines.destroy();
+      this.marker.destroy();
     });
   }
 
@@ -63,10 +71,14 @@ export class Berserker extends HeroClass {
       this.sweepStrike(now);
       if (!p.isDashing) this.endStrike(now);
     }
-    this.tryStrike(now);
-    this.trySpin(now);
+    if (this.leap) this.updateLeap(now, dt);
+    else {
+      this.tryLeap(now);
+      this.tryStrike(now);
+      this.trySpin(now);
+    }
     if (isFrozen(p, now)) return; // a hit just landed: the rest of the strike waits out the hitstop
-    p.move(p.controls.move, dt, now);
+    if (!this.leap) p.move(p.controls.move, dt, now);
     this.drain(now, dt);
 
     if (p.isDashing && now >= this.nextGhostAt) {
@@ -79,17 +91,20 @@ export class Berserker extends HeroClass {
       this.scene.fx.readyRing(p, TUNING.player.radius, MOMENTUM_TINT);
       sfx.dashReady();
     }
+    if (!this.leapShown && !this.leap && now >= this.nextLeapAt) {
+      this.leapShown = true;
+      this.scene.fx.readyRing(p, TUNING.player.radius * 1.4);
+      sfx.dashReady();
+    }
   }
 
-  // Melee and dash both strike, toward the aim (bent toward an enemy roughly in front).
+  // Melee strikes toward the aim (bent toward an enemy roughly in front).
   tryStrike(now) {
     const p = this.player;
     const c = p.controls;
     const S = this.cfg.strike;
-    const queuedAt = Math.max(c.attackQueuedAt, c.dashQueuedAt);
-    if (now - queuedAt > S.bufferMs || !p.canDash(now)) return;
+    if (now - c.attackQueuedAt > S.bufferMs || !p.canDash(now)) return;
     c.attackQueuedAt = -Infinity;
-    c.dashQueuedAt = -Infinity;
 
     const target = this.scene.findTarget(p, S.distance + S.assistRange, S.assistDeg);
     const angle = target ? target.angle : p.aimAngle;
@@ -205,6 +220,7 @@ export class Berserker extends HeroClass {
   // A spearhead out in front during a strike, with speed lines streaming back from it behind the hero;
   // it all fades once the strike ends. Brightest along the leading edge and toward the tip.
   syncVisuals(now) {
+    this.drawLandingSpot();
     const S = this.cfg.strike;
     const H = S.head;
     const g = this.head.clear();
@@ -251,14 +267,94 @@ export class Berserker extends HeroClass {
     draw(EDGE_TINT, 1, (f, rim) => rim);
   }
 
-  // Fire with half a bar or more: hit everything around you. Waits for a strike in progress to finish.
+  // Fire (right click) leaps toward the aim: to the cursor, or along the stick, at most maxDistance away.
+  // Waits for a strike in progress to finish.
+  tryLeap(now) {
+    const p = this.player;
+    const c = p.controls;
+    const J = this.cfg.leap;
+    if (now - c.shootQueuedAt > J.bufferMs || now < this.nextLeapAt || p.isDashing || now < p.stunUntil) return;
+    c.shootQueuedAt = -Infinity;
+
+    const aim = c.aimPoint ?? { x: p.x + Math.cos(p.aimAngle) * J.maxDistance, y: p.y + Math.sin(p.aimAngle) * J.maxDistance };
+    const to = new Phaser.Math.Vector2(aim.x - p.x, aim.y - p.y).limit(J.maxDistance).add(p);
+    const { width: W, height: H } = TUNING.world;
+    const edge = TUNING.player.radius;
+    to.set(Phaser.Math.Clamp(to.x, edge, W - edge), Phaser.Math.Clamp(to.y, edge, H - edge));
+    const reach = Phaser.Math.Distance.Between(p.x, p.y, to.x, to.y) / J.maxDistance;
+    const airMs = J.minAirMs + (J.maxAirMs - J.minAirMs) * reach;
+
+    p.stepLeft = 0;
+    p.shield(now + airMs + J.landingGraceMs);
+    this.leap = { to, secs: airMs / 1000, t: 0, height: J.height * Math.max(reach, 0.4), raging: this.raging };
+    this.scene.fx.hitSparks(p.x, p.y + TUNING.player.radius);
+    sfx.bruteJump(p.x, p.y);
+  }
+
+  // Fly toward the landing spot on an arc, re-aiming each frame so nothing knocks it off course.
+  updateLeap(now, dt) {
+    const p = this.player;
+    const leap = this.leap;
+    leap.t += dt;
+    const t = Math.min(leap.t / leap.secs, 1);
+    p.setLift(leap.height * 4 * t * (1 - t));
+    const left = Math.max(leap.secs - leap.t, dt);
+    p.body.velocity.set((leap.to.x - p.x) / left, (leap.to.y - p.y) / left);
+    if (t >= 1) this.land(now);
+  }
+
+  // Slam: hit everything around the landing spot. Hitting anything readies the next strike.
+  land(now) {
+    const p = this.player;
+    const scene = this.scene;
+    const J = this.cfg.leap;
+    const { raging } = this.leap;
+    this.leap = null;
+    this.marker.clear();
+    p.setLift(0);
+    p.body.velocity.set(0, 0);
+    this.nextLeapAt = now + J.cooldownMs;
+    this.leapShown = false;
+
+    const radius = raging ? J.rageRadius : J.radius;
+    const inSlam = (x, y, r) => Phaser.Math.Distance.Between(p.x, p.y, x, y) <= radius + r;
+    scene.cutBullets(inSlam);
+    let hits = 0;
+    let kills = 0;
+    const struck = [];
+    for (const enemy of [...scene.enemies.getChildren()]) {
+      if (enemy.dying || enemy.airborne || !inSlam(enemy.x, enemy.y, enemy.radius)) continue;
+      const dir = new Phaser.Math.Vector2(enemy.x - p.x, enemy.y - p.y);
+      if (dir.lengthSq() < 0.01) dir.setToPolar(p.aimAngle);
+      dir.normalize();
+      const hit = { damage: raging ? J.rageDamage : J.damage, dir, knockback: J.knockback, stunMs: J.stunMs, heavy: raging };
+      hits++;
+      if (scene.strikeEnemy(enemy, hit, now, 0.4)) kills++;
+      else struck.push(enemy);
+    }
+    this.gain(hits * this.cfg.meter.perHit + kills * this.cfg.meter.perKill, now);
+
+    sfx.bruteSlam(p.x, p.y);
+    scene.fx.slam(p.x, p.y, radius, raging ? RAGE_TINT : MOMENTUM_TINT);
+    scene.fx.squash(p, 0.35, 160);
+    scene.fx.shake(J.shake);
+    if (hits > kills) sfx.hit(raging);
+    if (hits > 0) {
+      scene.hitstop(J.hitstopMs, p, ...struck);
+      // Back into the chain straight away.
+      p.nextDashAt = Math.min(p.nextDashAt, now);
+      this.cooldownShown = true;
+    }
+  }
+
+  // Dash (Space) with half a bar or more: hit everything around you. Waits for a strike in progress to finish.
   trySpin(now) {
     const p = this.player;
     const scene = this.scene;
     const W = this.cfg.spin;
     const c = p.controls;
-    if (p.isDashing || now - c.shootQueuedAt > W.bufferMs) return;
-    c.shootQueuedAt = -Infinity;
+    if (p.isDashing || now - c.dashQueuedAt > W.bufferMs) return;
+    c.dashQueuedAt = -Infinity;
     if (this.meter < W.cost) {
       sfx.shotEmpty();
       scene.hud.shakeResource(this.playerIndex);
@@ -299,6 +395,18 @@ export class Berserker extends HeroClass {
     // Strike straight out of the spin.
     p.nextDashAt = Math.min(p.nextDashAt, now);
     this.cooldownShown = true;
+  }
+
+  // A ring on the floor where the leap will land, the size of the slam.
+  drawLandingSpot() {
+    const g = this.marker.clear();
+    const leap = this.leap;
+    if (!leap) return;
+    const J = this.cfg.leap;
+    const radius = leap.raging ? J.rageRadius : J.radius;
+    const t = Math.min(leap.t / leap.secs, 1);
+    g.fillStyle(leap.raging ? RAGE_TINT : MOMENTUM_TINT, 0.15 + 0.35 * t);
+    pixelSector(g, leap.to.x, leap.to.y, radius - 2 * ART_SCALE, radius);
   }
 
   gain(amount, now) {

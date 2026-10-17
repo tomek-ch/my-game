@@ -14,6 +14,7 @@ export class Controls {
   constructor() {
     this.move = new Phaser.Math.Vector2(); // normalized, or zero
     this.aimAngle = null;                  // radians, or null to keep the current aim
+    this.aimPoint = null;                  // world point aimed at, if the device has one (a mouse)
     // When each button was last pressed, so presses can be buffered for a moment.
     this.attackQueuedAt = -Infinity;
     this.shootQueuedAt = -Infinity;
@@ -57,6 +58,7 @@ export class MouseKeyboardControls extends Controls {
     ).normalize();
 
     const aim = this.scene.cameras.main.getWorldPoint(this.pointer.x, this.pointer.y);
+    this.aimPoint = aim;
     this.aimAngle = Math.atan2(aim.y - player.y, aim.x - player.x);
   }
 }

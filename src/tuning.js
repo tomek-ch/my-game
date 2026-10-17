@@ -125,6 +125,27 @@ export const TUNING = {
         speedLines: { count: 7, length: 95, innerLength: 0.6, halfWidth: 3, jitter: 0.35, flickerMs: 45 },
       },
 
+      // Right click: jump to where you aim (as far as maxDistance toward it) and slam down. Untouchable in the air.
+      // A landing that hits something readies the next strike at once, so it rescues a missed strike.
+      // Like a strike, it's enraged or not from takeoff: enraged, a wider slam that staggers brutes.
+      leap: {
+        bufferMs: 160,
+        maxDistance: 220,
+        minAirMs: 260,        // air time grows with the distance, between these
+        maxAirMs: 420,
+        height: 70,           // peak of the arc at full distance, visual only
+        cooldownMs: 2800,     // counted from landing
+        landingGraceMs: 120,  // still untouchable this long after landing
+        radius: 70,           // from the landing spot to an enemy's edge
+        rageRadius: 95,
+        damage: 2,
+        rageDamage: 3,
+        knockback: 520,
+        stunMs: 350,
+        hitstopMs: 70,
+        shake: { duration: 160, intensity: 0.01 },
+      },
+
       // Momentum, 0 to max. Drains after a moment without a hit. Hitstop and strikes pause the drain.
       meter: {
         max: 100,
@@ -135,7 +156,7 @@ export const TUNING = {
         rageAt: 50,           // at or above: harder strikes that go through brutes
       },
 
-      // Spends `cost` of the bar (one of its two halves): spin and hit everything around you. From a
+      // Space: spends `cost` of the bar (one of its two halves): spin and hit everything around you. From a
       // full bar you come out of it still raging. Kills refund some.
       spin: {
         bufferMs: 160,

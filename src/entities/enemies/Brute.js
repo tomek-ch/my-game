@@ -4,9 +4,9 @@ import { Enemy } from './Enemy.js';
 import { sfx } from '../../audio/sfx.js';
 import { ART_SCALE } from '../../art.js';
 import { pixelDisk, pixelSector } from '../../pixelShapes.js';
+import { AIR_DEPTH } from '../depth.js';
 
 const LUNGE_SECS = 0.1;
-const AIR_DEPTH = 11; // above every character while airborne, below projectiles
 const CROUCH_SQUASH = 0.18;
 
 // Up close: chase -> windup (red area fills up) -> swing -> recover -> chase.

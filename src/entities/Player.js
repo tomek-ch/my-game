@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { TUNING } from '../tuning.js';
-import { ySortDepth } from './depth.js';
+import { AIR_DEPTH, ySortDepth } from './depth.js';
 import { ART_SCALE } from '../art.js';
 import { Shadow } from './Shadow.js';
 import { isFrozen } from './hitstop.js';
@@ -48,6 +48,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.dashVel = new Phaser.Math.Vector2();
     this.nextDashAt = 0;
     this.dashExitSpeed = 0;
+    this.lift = 0; // px the sprite is drawn above the ground, see setLift()
     this.dashInvulnUntil = 0;
 
     this.weapon = scene.add.image(x, y, 'dungeon', weapon.frame).setScale(ART_SCALE).setOrigin(0.5, weapon.originY);
@@ -115,6 +116,16 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.dashInvulnUntil = now + cfg.durationMs + cfg.invulnGraceMs;
   }
 
+  // Draws the sprite `px` above its body, for jumps. The body (so x/y) and the shadow stay on the
+  // ground: the origin moves up, and the body's offset with it so it doesn't get dragged along.
+  setLift(px) {
+    const d = px / ART_SCALE;
+    const r = T.radius / ART_SCALE;
+    this.lift = px;
+    this.setOrigin(BODY_CENTER.x / this.width, (BODY_CENTER.y + d) / this.height);
+    this.body.setOffset(BODY_CENTER.x - r, BODY_CENTER.y - r + d);
+  }
+
   // Untouchable until `until`, without the hurt blink.
   shield(until) {
     this.dashInvulnUntil = Math.max(this.dashInvulnUntil, until);
@@ -153,7 +164,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const blink = now < this.invulnUntil && Math.floor(now / 60) % 2 === 0;
     this.setAlpha(blink ? 0.35 : 1);
     this.setFlipX(Math.cos(this.aimAngle) < 0);
-    this.setDepth(ySortDepth(this.y));
+    this.setDepth(this.lift > 0 ? AIR_DEPTH : ySortDepth(this.y));
     this.syncAnimation(now);
     this.syncWeapon(now, dt);
     this.weapon.setAlpha(this.alpha);
@@ -180,7 +191,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const facing = this.flipX ? -1 : 1;
     this.weapon.setPosition(
       this.x + HAND.x * facing * ART_SCALE,
-      this.y + HAND.y * ART_SCALE,
+      this.y + HAND.y * ART_SCALE - this.lift,
     );
 
     const swing = this.weaponSwing;
