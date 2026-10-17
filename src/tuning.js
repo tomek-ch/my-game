@@ -118,11 +118,11 @@ export const TUNING = {
         ghostIntervalMs: 14,
         shake: { duration: 70, intensity: 0.004 },
         // Drawn during a strike and fading out after it: a spearhead ahead of you (see pixelSpearhead)...
-        head: { back: 14, length: 50, halfWidth: 16, sweep: 10, rim: 4, fadeMs: 140 },
+        head: { back: 14, length: 56, halfWidth: 26, sweep: 10, hollow: 34, wall: 8, rim: 4, fadeMs: 140 },
         // ...and speed lines streaming back out of its back edge, across its width. The outer lines,
         // from the shoulder points, run longest; every flickerMs each one's length is rerolled by up to
         // `jitter` of it.
-        speedLines: { count: 5, length: 95, innerLength: 0.6, halfWidth: 3, jitter: 0.35, flickerMs: 45 },
+        speedLines: { count: 7, length: 95, innerLength: 0.6, halfWidth: 3, jitter: 0.35, flickerMs: 45 },
       },
 
       // Momentum, 0 to max. Drains after a moment without a hit. Hitstop and strikes pause the drain.

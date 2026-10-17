@@ -3,7 +3,7 @@ import { TUNING } from '../tuning.js';
 import { sfx } from '../audio/sfx.js';
 import { HeroClass } from './HeroClass.js';
 import { isFrozen } from '../entities/hitstop.js';
-import { pixelSpearhead, pixelSpike } from '../pixelShapes.js';
+import { pixelSpearhead, pixelSpike, spearheadBackEdge } from '../pixelShapes.js';
 
 export const MOMENTUM_TINT = 0xff8a3d;
 export const RAGE_TINT = 0xff3b3b;
@@ -222,8 +222,7 @@ export class Berserker extends HeroClass {
       const side = (i / (L.count - 1)) * 2 - 1; // -1 to 1 across the head
       const off = side * spread;
       // Each line starts a little inside the head's back edge, so it grows out of it.
-      const t = Math.abs(off) / H.halfWidth;
-      const start = H.back - H.sweep * t * t + 3;
+      const start = H.back + spearheadBackEdge(H, Math.abs(off)) + 3;
       const x = p.x + ux * start - uy * off;
       const y = p.y + uy * start + ux * off;
       const wake = L.innerLength + (1 - L.innerLength) * Math.abs(side);

@@ -69,8 +69,10 @@ export function pixelLine(g, x1, y1, x2, y2, width) {
 }
 
 // A spearhead pointing along `angle`: a needle tip that widens into rounded shoulders, which sweep
-// back into short points. shape, all in px: the shoulders are `back` ahead of (cx, cy) and `halfWidth`
-// to each side, the tip `length` ahead of them, and their points `sweep` behind them.
+// back into short points, hollowed out from behind so only the tip is solid and the sides are walls.
+// shape, all in px: the shoulders are `back` ahead of (cx, cy) and `halfWidth` to each side, the tip
+// `length` ahead of them, and their points `sweep` behind them. The hollow is pointed like the head,
+// reaches `hollow` ahead of the shoulders, and leaves walls `wall` thick at the shoulders.
 // Fills the pixels for which pick(f, rim) is true: f runs from 0 at the shoulders to 1 at the tip, and
 // rim is true within `rim` px of the outer edge.
 export function pixelSpearhead(g, cx, cy, angle, shape, pick) {
@@ -80,13 +82,29 @@ export function pixelSpearhead(g, cx, cy, angle, shape, pick) {
   return fillPixels(g, cx, cy, back + length + w, (x, y) => {
     const u = (x - cx) * ux + (y - cy) * uy - back; // ahead of the shoulders
     const v = Math.abs((x - cx) * uy - (y - cy) * ux);
-    if (u > length || u < -sweep || v > w) return false;
+    if (u > length || u < -sweep || v > w || v < hollowWidth(shape, u)) return false;
     // Ahead of the shoulders a sine profile: zero width at the tip, round where it meets them.
     // Behind them, the back edge curves back to the points.
     if (u < 0) return v / w >= Math.sqrt(-u / sweep) && pick(0, true);
     const outer = w * Math.sin((Math.PI / 2) * (length - u) / length) ** 1.6;
     return v <= outer && pick(u / length, v > outer - rim);
   });
+}
+
+// Half the hollow's width at `u` px ahead of the shoulders (0 past its point).
+function hollowWidth({ halfWidth, wall, hollow }, u) {
+  if (u >= hollow) return 0;
+  if (u <= 0) return halfWidth - wall;
+  return (halfWidth - wall) * Math.sin((Math.PI / 2) * (hollow - u) / hollow) ** 1.6;
+}
+
+// Where a spearhead's back edge is `v` px off its center line: px ahead of the shoulders (negative
+// behind them, out on the points). Inside the hollow that's the hollow's edge.
+export function spearheadBackEdge({ halfWidth, wall, hollow, sweep }, v) {
+  const inner = halfWidth - wall;
+  if (v < inner) return hollow * (1 - (2 / Math.PI) * Math.asin((v / inner) ** (1 / 1.6)));
+  const t = Math.min(v / halfWidth, 1);
+  return -sweep * t * t;
 }
 
 // A spike from (x, y) along `angle`: `halfWidth` px each side at its base, tapering to a point `length`
